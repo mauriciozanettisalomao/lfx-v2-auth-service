@@ -80,11 +80,11 @@ func main() {
 
 	handleHTTPServer(ctx, addr, authEndpoints, &wg, errc, *dbgF)
 
-	// TODO: Start NATS subscriptions here
-	// if err := startNATSSubscriptions(ctx); err != nil {
-	//     slog.ErrorContext(ctx, "failed to start NATS subscriptions", "error", err)
-	//     errc <- fmt.Errorf("failed to start NATS subscriptions: %w", err)
-	// }
+	// Start NATS subscriptions
+	if err := service.QueueSubscriptions(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to start NATS subscriptions", "error", err)
+		errc <- fmt.Errorf("failed to start NATS subscriptions: %w", err)
+	}
 
 	// Wait for signal
 	slog.InfoContext(ctx, "received shutdown signal, stopping servers",
