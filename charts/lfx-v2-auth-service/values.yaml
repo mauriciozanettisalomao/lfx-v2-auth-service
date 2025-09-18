@@ -1,0 +1,19 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+# Default values for lfx-v2-auth-service.
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/linuxfoundation/lfx-v2-auth-service
+  # tag is the container image tag (overrides appVersion from Chart.yaml)
+  tag: ""
+  # pullPolicy is the image pull policy
+  pullPolicy: IfNotPresent
+
+# service is the configuration for the Kubernetes service
+service:
+  # port is the service port
+  port: 8080
