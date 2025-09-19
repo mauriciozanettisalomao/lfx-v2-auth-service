@@ -50,6 +50,11 @@ func (c *NATSClient) IsReady(ctx context.Context) error {
 
 // SubscribeWithTransportMessenger subscribes to a subject with proper TransportMessenger handling
 func (c *NATSClient) SubscribeWithTransportMessenger(ctx context.Context, subject string, queueName string, handler func(context.Context, port.TransportMessenger)) (*nats.Subscription, error) {
+
+	if err := c.IsReady(ctx); err != nil {
+		return nil, err
+	}
+
 	return c.conn.QueueSubscribe(subject, queueName, func(msg *nats.Msg) {
 		transportMsg := NewTransportMessenger(msg)
 

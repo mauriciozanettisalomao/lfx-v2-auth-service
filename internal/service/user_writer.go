@@ -8,6 +8,7 @@ import (
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 )
 
 // UserServiceWriter defines the behavior of the user service writer
@@ -32,6 +33,10 @@ func WithUserWriter(userWriter port.UserWriter) userWriterOrchestratorOption {
 
 // UpdateUser updates the user in the identity provider
 func (u *userWriterOrchestrator) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+
+	if u.userWriter == nil {
+		return nil, errors.NewServiceUnavailable("user writer not configured")
+	}
 
 	// Sanitize user data first
 	user.UserSanitize()

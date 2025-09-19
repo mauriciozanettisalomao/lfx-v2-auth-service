@@ -5,7 +5,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"log/slog"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
@@ -56,8 +56,8 @@ func (mhs *MessageHandlerService) HandleMessage(ctx context.Context, msg port.Tr
 }
 
 func (mhs *MessageHandlerService) respondWithError(ctx context.Context, msg port.TransportMessenger, errorMsg string) {
-	errResponse := []byte(fmt.Sprintf(`{"error":"%s"}`, errorMsg))
-	if err := msg.Respond(errResponse); err != nil {
+	payload, _ := json.Marshal(map[string]string{"error": errorMsg})
+	if err := msg.Respond(payload); err != nil {
 		slog.ErrorContext(ctx, "failed to send error response", "error", err)
 	}
 }

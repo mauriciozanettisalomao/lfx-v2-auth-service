@@ -329,9 +329,9 @@ func TestWithUserWriterForMessageHandler(t *testing.T) {
 
 		// Verify we get a structured response with success=true
 		var response struct {
-			Success      bool        `json:"success"`
-			UserMetadata interface{} `json:"user_metadata"`
-			Error        string      `json:"error"`
+			Success bool        `json:"success"`
+			Data    interface{} `json:"data"`
+			Error   string      `json:"error"`
 		}
 		if err := json.Unmarshal(result, &response); err != nil {
 			t.Fatalf("Failed to unmarshal result: %v", err)
@@ -342,8 +342,8 @@ func TestWithUserWriterForMessageHandler(t *testing.T) {
 		}
 
 		// The result should have nil metadata since the test user has no metadata
-		if response.UserMetadata != nil {
-			t.Errorf("Expected nil user_metadata, got %v", response.UserMetadata)
+		if response.Data != nil {
+			t.Errorf("Expected nil user_metadata, got %v", response.Data)
 		}
 	})
 }

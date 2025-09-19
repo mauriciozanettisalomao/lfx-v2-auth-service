@@ -45,6 +45,10 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 // UpdateUser updates the user in the identity provider
 func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
 
+	if m.userWriter == nil {
+		return m.errorResponse("user service unavailable"), nil
+	}
+
 	user := &model.User{}
 	err := json.Unmarshal(msg.Data(), user)
 	if err != nil {
