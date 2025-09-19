@@ -17,3 +17,12 @@ image:
 service:
   # port is the service port
   port: 8080
+
+# app is the configuration for the application
+app:
+  # use_oidc_contextualizer is a boolean to determine if the OIDC contextualizer should be used
+  use_oidc_contextualizer: true
+  # environment is the configuration for the application environment
+  environment:
+    NATS_URL:
+      value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222

@@ -33,7 +33,13 @@ func WithUserWriter(userWriter port.UserWriter) userWriterOrchestratorOption {
 // UpdateUser updates the user in the identity provider
 func (u *userWriterOrchestrator) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 
-	// TODO: perform validation/sanitization of the user data
+	// Sanitize user data first
+	user.UserSanitize()
+
+	// Validate user data
+	if err := user.Validate(); err != nil {
+		return nil, err
+	}
 
 	return u.userWriter.UpdateUser(ctx, user)
 }

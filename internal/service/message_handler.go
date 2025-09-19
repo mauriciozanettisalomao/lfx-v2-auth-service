@@ -9,8 +9,14 @@ import (
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
-	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 )
+
+// UserUpdateResponse represents the response structure for user update operations
+type UserDataResponse struct {
+	Success bool   `json:"success"`
+	Data    any    `json:"data,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
 
 // messageHandlerOrchestrator orchestrates the message handling process
 type messageHandlerOrchestrator struct {
@@ -27,13 +33,23 @@ func WithUserWriterForMessageHandler(userWriter UserServiceWriter) messageHandle
 	}
 }
 
+func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
+	response := UserDataResponse{
+		Success: false,
+		Error:   error,
+	}
+	responseJSON, _ := json.Marshal(response)
+	return responseJSON
+}
+
 // UpdateUser updates the user in the identity provider
 func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
 
 	user := &model.User{}
 	err := json.Unmarshal(msg.Data(), user)
 	if err != nil {
-		return nil, errors.NewUnexpected("failed to unmarshal user", err)
+		responseJSON := m.errorResponse("failed to unmarshal user data")
+		return responseJSON, nil
 	}
 
 	// It's calling another service to update the user because in case of
@@ -41,14 +57,23 @@ func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.Tr
 	// we can do without changing the user writer orchestrator
 	updatedUser, err := m.userWriter.UpdateUser(ctx, user)
 	if err != nil {
-		return nil, errors.NewUnexpected("failed to update user", err)
+		responseJSON := m.errorResponse(err.Error())
+		return responseJSON, nil
 	}
-	// TODO: handle the response from the user writer
-	updatedUserJSON, err := json.Marshal(updatedUser)
+
+	// Return success response with user metadata
+	response := UserDataResponse{
+		Success: true,
+		Data:    updatedUser.UserMetadata,
+	}
+
+	responseJSON, err := json.Marshal(response)
 	if err != nil {
-		return nil, errors.NewUnexpected("failed to marshal updated user", err)
+		errorResponseJSON := m.errorResponse("failed to marshal response")
+		return errorResponseJSON, nil
 	}
-	return updatedUserJSON, nil
+
+	return responseJSON, nil
 }
 
 // NewMessageHandlerOrchestrator creates a new message handler orchestrator using the option pattern
