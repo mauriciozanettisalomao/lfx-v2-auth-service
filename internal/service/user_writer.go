@@ -20,7 +20,7 @@ type userWriterOrchestrator struct {
 	userWriter port.UserWriter
 }
 
-// CommitteeWriter defines the interface for committee write operations
+// userWriterOrchestratorOption defines the option for the user writer orchestrator
 type userWriterOrchestratorOption func(*userWriterOrchestrator)
 
 // WithUserWriter sets the user writer for the user writer orchestrator
