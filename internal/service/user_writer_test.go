@@ -237,7 +237,7 @@ func TestNewUserWriterOrchestrator(t *testing.T) {
 		}
 
 		// Verify it implements the interface
-		var _ UserServiceWriter = orchestrator
+		var _ = UserServiceWriter(orchestrator)
 	})
 
 	t.Run("create orchestrator without options", func(t *testing.T) {

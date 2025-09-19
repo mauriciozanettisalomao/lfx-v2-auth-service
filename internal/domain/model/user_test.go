@@ -153,10 +153,8 @@ func TestUser_Validate(t *testing.T) {
 						t.Errorf("User.Validate() expected Validation error, got %T", err)
 					}
 				}
-			} else {
-				if err != nil {
-					t.Errorf("User.Validate() unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("User.Validate() unexpected error: %v", err)
 			}
 		})
 	}
