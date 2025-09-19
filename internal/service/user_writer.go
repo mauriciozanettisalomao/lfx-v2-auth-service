@@ -1,0 +1,59 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+package service
+
+import (
+	"context"
+
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+)
+
+// UserServiceWriter defines the behavior of the user service writer
+type UserServiceWriter interface {
+	UpdateUser(ctx context.Context, user *model.User) (*model.User, error)
+}
+
+// userWriterOrchestrator orchestrates the user writer process
+type userWriterOrchestrator struct {
+	userWriter port.UserWriter
+}
+
+// userWriterOrchestratorOption defines the option for the user writer orchestrator
+type userWriterOrchestratorOption func(*userWriterOrchestrator)
+
+// WithUserWriter sets the user writer for the user writer orchestrator
+func WithUserWriter(userWriter port.UserWriter) userWriterOrchestratorOption {
+	return func(o *userWriterOrchestrator) {
+		o.userWriter = userWriter
+	}
+}
+
+// UpdateUser updates the user in the identity provider
+func (u *userWriterOrchestrator) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+
+	if u.userWriter == nil {
+		return nil, errors.NewServiceUnavailable("user writer not configured")
+	}
+
+	// Sanitize user data first
+	user.UserSanitize()
+
+	// Validate user data
+	if err := user.Validate(); err != nil {
+		return nil, err
+	}
+
+	return u.userWriter.UpdateUser(ctx, user)
+}
+
+// NewUserWriterOrchestrator creates a new user writer orchestrator
+func NewUserWriterOrchestrator(opts ...userWriterOrchestratorOption) UserServiceWriter {
+	o := &userWriterOrchestrator{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}

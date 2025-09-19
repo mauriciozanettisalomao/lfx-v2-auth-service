@@ -22,6 +22,16 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          {{- range $name, $config := .Values.app.environment }}
+          - name: {{ $name }}
+            {{- if $config.value }}
+            value: {{ $config.value | quote }}
+            {{- else if $config.valueFrom }}
+            valueFrom:
+              {{- toYaml $config.valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
           ports:
             - containerPort: {{ .Values.service.port }}
               name: web
