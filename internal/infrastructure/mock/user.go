@@ -11,7 +11,6 @@ import (
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
-	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/converters"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,79 +27,7 @@ type UserData struct {
 	Users []model.User `yaml:"users"`
 }
 
-// getHardcodedUsers returns three hardcoded users with fantasy names
-func getHardcodedUsers() []*model.User {
-	return []*model.User{
-		{
-			Token:        "mock-token-zephyr-001",
-			UserID:       "user-001",
-			Username:     "zephyr.stormwind",
-			PrimaryEmail: "zephyr.stormwind@mockdomain.com",
-			UserMetadata: &model.UserMetadata{
-				Picture:       converters.StringPtr("https://api.dicebear.com/7.x/avataaars/svg?seed=zephyr"),
-				Zoneinfo:      converters.StringPtr("America/New_York"),
-				Name:          converters.StringPtr("Zephyr Stormwind"),
-				GivenName:     converters.StringPtr("Zephyr"),
-				FamilyName:    converters.StringPtr("Stormwind"),
-				JobTitle:      converters.StringPtr("Cloud Architect"),
-				Organization:  converters.StringPtr("Mythical Tech Solutions"),
-				Country:       converters.StringPtr("United States"),
-				StateProvince: converters.StringPtr("New York"),
-				City:          converters.StringPtr("New York"),
-				Address:       converters.StringPtr("123 Cloud Nine Ave, Apt 42"),
-				PostalCode:    converters.StringPtr("10001"),
-				PhoneNumber:   converters.StringPtr("+1-555-123-4567"),
-				TShirtSize:    converters.StringPtr("M"),
-			},
-		},
-		{
-			Token:        "mock-token-aurora-002",
-			UserID:       "user-002",
-			Username:     "aurora.moonbeam",
-			PrimaryEmail: "aurora.moonbeam@fantasycorp.io",
-			UserMetadata: &model.UserMetadata{
-				Picture:       converters.StringPtr("https://api.dicebear.com/7.x/avataaars/svg?seed=aurora"),
-				Zoneinfo:      converters.StringPtr("Europe/London"),
-				Name:          converters.StringPtr("Aurora Moonbeam"),
-				GivenName:     converters.StringPtr("Aurora"),
-				FamilyName:    converters.StringPtr("Moonbeam"),
-				JobTitle:      converters.StringPtr("Senior DevOps Engineer"),
-				Organization:  converters.StringPtr("Enchanted Systems Ltd"),
-				Country:       converters.StringPtr("United Kingdom"),
-				StateProvince: converters.StringPtr("England"),
-				City:          converters.StringPtr("London"),
-				Address:       converters.StringPtr("456 Starlight Street"),
-				PostalCode:    converters.StringPtr("SW1A 1AA"),
-				PhoneNumber:   converters.StringPtr("+44-20-7946-0958"),
-				TShirtSize:    converters.StringPtr("L"),
-			},
-		},
-		{
-			Token:        "mock-token-phoenix-003",
-			UserID:       "user-003",
-			Username:     "phoenix.fireforge",
-			PrimaryEmail: "phoenix.fireforge@legendarydev.net",
-			UserMetadata: &model.UserMetadata{
-				Picture:       converters.StringPtr("https://api.dicebear.com/7.x/avataaars/svg?seed=phoenix"),
-				Zoneinfo:      converters.StringPtr("America/Los_Angeles"),
-				Name:          converters.StringPtr("Phoenix Fireforge"),
-				GivenName:     converters.StringPtr("Phoenix"),
-				FamilyName:    converters.StringPtr("Fireforge"),
-				JobTitle:      converters.StringPtr("Full Stack Wizard"),
-				Organization:  converters.StringPtr("Mythical Development Co"),
-				Country:       converters.StringPtr("United States"),
-				StateProvince: converters.StringPtr("California"),
-				City:          converters.StringPtr("San Francisco"),
-				Address:       converters.StringPtr("789 Dragon Lane, Unit 13"),
-				PostalCode:    converters.StringPtr("94102"),
-				PhoneNumber:   converters.StringPtr("+1-415-555-9876"),
-				TShirtSize:    converters.StringPtr("XL"),
-			},
-		},
-	}
-}
-
-// loadUsersFromYAML loads users from embedded YAML file as fallback
+// loadUsersFromYAML loads users from embedded YAML file
 func loadUsersFromYAML(ctx context.Context) ([]*model.User, error) {
 	var userData UserData
 	if err := yaml.Unmarshal(usersYAML, &userData); err != nil {
@@ -239,21 +166,23 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	return &updatedUser, nil
 }
 
-// NewUserReaderWriter creates a new mock UserReaderWriter with YAML file as primary and hardcoded users as fallback
+// NewUserReaderWriter creates a new mock UserReaderWriter with YAML file as the data source
 func NewUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 	users := make(map[string]*model.User)
 
-	// Try to load from YAML file first (primary source)
+	// Load users from embedded YAML file
 	mockUsers, err := loadUsersFromYAML(ctx)
-
-	// If YAML loading fails, fall back to hardcoded users
-	if err != nil || len(mockUsers) == 0 {
-		slog.WarnContext(ctx, "YAML users unavailable, falling back to hardcoded users", "error", err)
-		mockUsers = getHardcodedUsers()
-		slog.InfoContext(ctx, "using hardcoded users as fallback", "count", len(mockUsers))
-	} else {
-		slog.InfoContext(ctx, "successfully loaded users from YAML file", "count", len(mockUsers))
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to load users from YAML file", "error", err)
+		return &userWriter{users: users} // Return empty store if YAML fails
 	}
+
+	if len(mockUsers) == 0 {
+		slog.WarnContext(ctx, "no users found in YAML file")
+		return &userWriter{users: users} // Return empty store if no users
+	}
+
+	slog.InfoContext(ctx, "successfully loaded users from YAML file", "count", len(mockUsers))
 
 	// Add users to storage with both username and email as keys for lookup flexibility
 	for _, user := range mockUsers {

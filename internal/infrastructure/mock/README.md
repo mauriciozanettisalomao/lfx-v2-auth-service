@@ -4,22 +4,19 @@ This package provides a mock implementation of the user infrastructure for testi
 
 ## Overview
 
-The mock user system provides a simple in-memory storage solution for user data with two data sources:
-1. **YAML File** (Primary): Embedded YAML file with three fantasy-themed users with complete profile data
-2. **Hardcoded Users** (Fallback): Same user data defined in code as backup
+The mock user system provides a simple in-memory storage solution for user data using an embedded YAML file, which can be modified as needed during the development phase. (Be careful when modifying and committing the file — currently, the data is fantasy-themed and not real or sensitive.)
 
 ## Features
 
 - **In-memory storage**: Fast, stateful mock operations during runtime
-- **YAML primary source**: Embedded YAML file with three predefined users with fantasy names for consistent testing
-- **Hardcoded fallback**: Code-defined users as backup data source
+- **YAML data source**: Embedded YAML file with five predefined users for consistent testing
 - **Dual-key lookup**: Users can be found by either username or primary email
 - **PATCH-style updates**: Only non-empty/non-nil fields are updated
 - **Comprehensive logging**: Detailed logging for debugging and monitoring
 
 ## Mock Users
 
-The system includes three hardcoded users with fantasy names:
+The system includes five users defined in the YAML file:
 
 ### 1. Zephyr Stormwind
 - **Username**: `zephyr.stormwind`
@@ -42,13 +39,10 @@ The system includes three hardcoded users with fantasy names:
 - **Location**: San Francisco, USA
 - **Timezone**: America/Los_Angeles
 
-## Data Sources
+## Data Source
 
-### Primary: Embedded YAML File
-The primary data source is the embedded `users.yaml` file loaded using Go's `//go:embed` directive. This allows easy modification of user data without changing code, making it ideal for different testing scenarios.
-
-### Fallback: Hardcoded Users
-If the YAML file is unavailable or fails to parse, the system falls back to the `getHardcodedUsers()` function that returns the same three predefined users with complete profile information. This ensures the system always has data available.
+### Embedded YAML File
+The data source is the embedded `users.yaml` file loaded using Go's `//go:embed` directive. This allows easy modification of user data without changing code, making it ideal for different testing scenarios.
 
 ```yaml
 users:
@@ -98,8 +92,7 @@ The mock system is perfect for:
 ## Extending the System
 
 To add more mock users:
-1. Update the `users.yaml` file with the new user data (primary source)
-2. Add them to the `getHardcodedUsers()` function (fallback source)
-3. Update this README with the new user information
+1. Update the `users.yaml` file with the new user data
+2. Update this README with the new user information
 
-The system will automatically handle the additional users without code changes to the core logic. Since YAML is the primary source, you can modify user data by just editing the YAML file.
+The system will automatically handle the additional users without code changes to the core logic. You can modify user data by just editing the YAML file.
