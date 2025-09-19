@@ -69,9 +69,6 @@ coverage/
 config/local.yml
 config/secrets.yml
 
-# Mock user data files (may contain sensitive test data)
-internal/infrastructure/mock/users.yaml
-
 # Docker files
 .dockerignore
 
