@@ -126,12 +126,27 @@ nats request lfx.auth-service.user.update '{
 
 #### Configuration
 
+##### NATS Configuration
+
 The NATS client can be configured using environment variables:
 
 - `NATS_URL`: NATS server URL (default: `nats://localhost:4222`)
 - `NATS_TIMEOUT`: Request timeout duration (default: `10s`)
 - `NATS_MAX_RECONNECT`: Maximum reconnection attempts (default: `3`)
 - `NATS_RECONNECT_WAIT`: Time between reconnection attempts (default: `2s`)
+
+##### Auth0 Configuration
+
+The Auth0 integration can be configured using environment variables:
+
+- `AUTH0_TENANT`: Auth0 tenant name (e.g., `"linuxfoundation"`, `"linuxfoundation-staging"`, `"linuxfoundation-dev"`)
+  - **If not set, the service will automatically use mock/local behavior**
+- `AUTH0_DOMAIN`: Auth0 domain for Management API calls (e.g., `"sso.linuxfoundation.org"`)
+  - **If not set, defaults to `${AUTH0_TENANT}.auth0.com`**
+- `USER_REPOSITORY_TYPE`: Set to `"auth0"` to use Auth0 integration, or `"mock"` for local development
+  - **Defaults to `"auth0"` when `AUTH0_TENANT` is set, `"mock"` otherwise**
+
+**Note:** When `AUTH0_DOMAIN` and `AUTH0_MANAGEMENT_TOKEN` are not set, the service will validate JWT tokens but won't make actual calls to Auth0's Management API.
 
 ## Releases
 

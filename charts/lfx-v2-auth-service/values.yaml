@@ -26,3 +26,6 @@ app:
   environment:
     NATS_URL:
       value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
+    # Auth0 Management API configuration
+    AUTH0_TENANT: ""
+    AUTH0_DOMAIN: ""

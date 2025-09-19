@@ -6,6 +6,7 @@ module github.com/linuxfoundation/lfx-v2-auth-service
 go 1.24.5
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/nats-io/nats.go v1.45.0
 	goa.design/clue v1.2.3
 	goa.design/goa/v3 v3.22.2
