@@ -34,7 +34,7 @@ type Config struct {
 
 // userUpdateRequest represents the request body for updating a user in Auth0
 type userUpdateRequest struct {
-	UserMetadata *model.UserMetadata `json:"user_metadata"`
+	UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
 }
 
 type userWriter struct {
@@ -47,9 +47,12 @@ func (u *userWriter) jwtVerify(ctx context.Context, user *model.User) error {
 		return fmt.Errorf("token is required")
 	}
 
-	// Remove "Bearer " prefix if present
-	tokenString := strings.TrimPrefix(user.Token, "Bearer ")
-	tokenString = strings.TrimSpace(tokenString)
+	// Remove optional Bearer prefix (case-insensitive) and trim
+	tokenString := strings.TrimSpace(user.Token)
+	parts := strings.Fields(user.Token)
+	if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
+		tokenString = strings.Join(parts[1:], " ")
+	}
 
 	// Parse the token without verification for now (we'll add JWKS verification later if needed)
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
@@ -158,9 +161,15 @@ func (u *userWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse,
 		"description", req.Description,
 		"request_body", string(requestBody))
 
-	// Prepare headers
+	// Prepare headers (normalize Authorization token)
+	authHeader := strings.TrimSpace(req.Token)
+	lower := strings.ToLower(authHeader)
+	if !strings.HasPrefix(lower, "bearer ") {
+		authHeader = "Bearer " + authHeader
+	}
 	headers := map[string]string{
-		"Authorization": fmt.Sprintf("Bearer %s", req.Token),
+		"Authorization": authHeader,
+		"Accept":        "application/json",
 	}
 
 	// Add Content-Type for requests with body
@@ -269,9 +278,10 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	}
 
 	// Prepare the request body for updating user metadata
-	updateRequest := userUpdateRequest{
-		UserMetadata: user.UserMetadata,
+	if user.UserMetadata == nil {
+		return nil, errors.NewValidation("user_metadata is required for update")
 	}
+	updateRequest := userUpdateRequest{UserMetadata: user.UserMetadata}
 
 	// Call Auth0 Management API to update the user
 	apiRequest := APIRequest{

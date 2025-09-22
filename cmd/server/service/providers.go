@@ -80,7 +80,6 @@ func natsInit(ctx context.Context) {
 }
 
 // newUserReaderWriter creates a UserReaderWriter implementation based on the environment variable.
-// If AUTH0_TENANT is not set, it will use the mock implementation for local/development behavior.
 // Set USER_REPOSITORY_TYPE to "mock" to explicitly use mock, or "auth0" to use Auth0.
 func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 

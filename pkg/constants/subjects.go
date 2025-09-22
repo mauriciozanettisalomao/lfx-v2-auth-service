@@ -9,6 +9,6 @@ const (
 	AuthServiceQueue = "lfx.auth-service.queue"
 
 	// UserMetadataUpdateSubject is the subject for the user metadata update event.
-	// The subject is of the form: lfx.auth-service.user.update
+	// The subject is of the form: lfx.auth-service.user_metadata.update
 	UserMetadataUpdateSubject = "lfx.auth-service.user_metadata.update"
 )
