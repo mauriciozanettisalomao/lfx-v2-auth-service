@@ -390,11 +390,9 @@ func TestUserWriter_GetUser(t *testing.T) {
 				if !containsString(err.Error(), tt.errorMsg) {
 					t.Errorf("GetUser() error = %v, should contain %v", err.Error(), tt.errorMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("GetUser() should not return error, got %v", err)
-					return
-				}
+			} else if err != nil {
+				t.Errorf("GetUser() should not return error, got %v", err)
+				return
 			}
 		})
 	}
@@ -489,10 +487,9 @@ func TestUserWriter_ParseAuth0Response(t *testing.T) {
 					t.Errorf("JSON parsing should return error for malformed input")
 					return
 				}
-				if !containsString(err.Error(), "invalid character") && tt.errorMsg != "" {
-					// For JSON parsing errors, we expect "invalid character" or similar
-					// This simulates what would happen in the actual UpdateUser function
-				}
+				// For JSON parsing errors, we expect different error messages depending on the type of malformed JSON
+				// "invalid character" for malformed JSON, "unexpected end of JSON input" for empty strings
+				// This test validates that JSON parsing fails as expected
 				return
 			}
 
