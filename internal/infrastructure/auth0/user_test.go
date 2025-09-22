@@ -248,6 +248,9 @@ func TestUserWriter_UpdateUser(t *testing.T) {
 				Token:        createValidToken(),
 				Username:     "testuser",
 				PrimaryEmail: "test@example.com",
+				UserMetadata: &model.UserMetadata{
+					Name: converters.StringPtr("Test User"),
+				},
 			},
 			wantError: true,
 			errorMsg:  "Auth0 configuration is incomplete",
@@ -262,6 +265,9 @@ func TestUserWriter_UpdateUser(t *testing.T) {
 				Token:        createValidToken(),
 				Username:     "testuser",
 				PrimaryEmail: "test@example.com",
+				UserMetadata: &model.UserMetadata{
+					Name: converters.StringPtr("Test User"),
+				},
 			},
 			wantError: true, // Will fail due to incomplete config
 			errorMsg:  "Auth0 configuration is incomplete",
