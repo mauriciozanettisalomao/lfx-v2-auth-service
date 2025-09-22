@@ -48,10 +48,6 @@ func (u *User) Validate() error {
 		return errors.NewValidation(errRequiredMsg("token"))
 	}
 
-	if strings.TrimSpace(u.Username) == "" {
-		return errors.NewValidation(errRequiredMsg("username"))
-	}
-
 	if u.UserMetadata == nil {
 		return errors.NewValidation(errRequiredMsg("user_metadata"))
 	}

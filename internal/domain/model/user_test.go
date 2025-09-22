@@ -21,7 +21,6 @@ func TestUser_Validate(t *testing.T) {
 			name: "valid user with all required fields",
 			user: &User{
 				Token:        "valid-token",
-				Username:     "valid-username",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: &UserMetadata{
@@ -33,7 +32,6 @@ func TestUser_Validate(t *testing.T) {
 		{
 			name: "missing token",
 			user: &User{
-				Username:     "valid-username",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: &UserMetadata{
@@ -47,7 +45,6 @@ func TestUser_Validate(t *testing.T) {
 			name: "empty token",
 			user: &User{
 				Token:        "",
-				Username:     "valid-username",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: &UserMetadata{
@@ -61,48 +58,6 @@ func TestUser_Validate(t *testing.T) {
 			name: "token with only spaces",
 			user: &User{
 				Token:        "   ",
-				Username:     "valid-username",
-				UserID:       "user-123",
-				PrimaryEmail: "user@example.com",
-				UserMetadata: &UserMetadata{
-					Name: converters.StringPtr("John Doe"),
-				},
-			},
-			wantErr: true,
-			errType: "validation",
-		},
-		{
-			name: "missing username",
-			user: &User{
-				Token:        "valid-token",
-				UserID:       "user-123",
-				PrimaryEmail: "user@example.com",
-				UserMetadata: &UserMetadata{
-					Name: converters.StringPtr("John Doe"),
-				},
-			},
-			wantErr: true,
-			errType: "validation",
-		},
-		{
-			name: "empty username",
-			user: &User{
-				Token:        "valid-token",
-				Username:     "",
-				UserID:       "user-123",
-				PrimaryEmail: "user@example.com",
-				UserMetadata: &UserMetadata{
-					Name: converters.StringPtr("John Doe"),
-				},
-			},
-			wantErr: true,
-			errType: "validation",
-		},
-		{
-			name: "username with only spaces",
-			user: &User{
-				Token:        "valid-token",
-				Username:     "   ",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: &UserMetadata{
@@ -116,7 +71,6 @@ func TestUser_Validate(t *testing.T) {
 			name: "missing user_metadata",
 			user: &User{
 				Token:        "valid-token",
-				Username:     "valid-username",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: nil,
@@ -128,7 +82,6 @@ func TestUser_Validate(t *testing.T) {
 			name: "valid user with metadata",
 			user: &User{
 				Token:        "valid-token",
-				Username:     "valid-username",
 				UserID:       "user-123",
 				PrimaryEmail: "user@example.com",
 				UserMetadata: &UserMetadata{

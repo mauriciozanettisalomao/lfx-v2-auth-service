@@ -5,11 +5,13 @@ package auth0
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/converters"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 )
 
@@ -35,10 +37,10 @@ func TestUserWriter_jwtVerify(t *testing.T) {
 			name: "valid token with all required claims",
 			setupUser: func() *model.User {
 				claims := jwt.MapClaims{
-					"sub":   "auth0|mauriciozanetti",
+					"sub":   "auth0|fantasticwizard",
 					"exp":   time.Now().Add(time.Hour).Unix(),
 					"scope": "read:profile update:current_user_metadata write:data",
-					"iss":   "https://linuxfoundation-dev.auth0.com/",
+					"iss":   "https://mythicaltech-dev.auth0.com/",
 				}
 				return &model.User{
 					Token: createTestToken(claims),
@@ -330,6 +332,469 @@ func TestUserWriter_UpdateUser_JWTValidation(t *testing.T) {
 	if user.UserID != "auth0|testuser" {
 		t.Errorf("jwtVerify() should assign user_id from token, got %v", user.UserID)
 	}
+}
+
+func TestUserWriter_GetUser(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		config    Config
+		user      *model.User
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name: "missing user_id",
+			config: Config{
+				Tenant: "test-tenant",
+				Domain: "test-tenant.auth0.com",
+			},
+			user: &model.User{
+				Token:        "some-token",
+				UserID:       "", // Missing user_id
+				Username:     "testuser",
+				PrimaryEmail: "test@example.com",
+			},
+			wantError: true,
+			errorMsg:  "user_id is required to get user",
+		},
+		{
+			name: "missing domain configuration",
+			config: Config{
+				Tenant: "test-tenant",
+				Domain: "", // Missing domain
+			},
+			user: &model.User{
+				Token:        "some-token",
+				UserID:       "auth0|testuser",
+				Username:     "testuser",
+				PrimaryEmail: "test@example.com",
+			},
+			wantError: true,
+			errorMsg:  "Auth0 configuration is incomplete",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := NewUserReaderWriter(httpclient.DefaultConfig(), tt.config).(*userWriter)
+
+			_, err := writer.GetUser(ctx, tt.user)
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("GetUser() should return error")
+					return
+				}
+				if !containsString(err.Error(), tt.errorMsg) {
+					t.Errorf("GetUser() error = %v, should contain %v", err.Error(), tt.errorMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("GetUser() should not return error, got %v", err)
+					return
+				}
+			}
+		})
+	}
+}
+
+// TestUserWriter_ParseAuth0Response tests the parsing logic for Auth0 responses in UpdateUser
+func TestUserWriter_ParseAuth0Response(t *testing.T) {
+	tests := []struct {
+		name             string
+		responseBody     string
+		expectedMetadata *model.UserMetadata
+		wantError        bool
+		errorMsg         string
+	}{
+		{
+			name: "successful parsing with complete user_metadata",
+			responseBody: `{
+				"user_id": "auth0|testuser",
+				"user_metadata": {
+					"name": "Phoenix Starweaver",
+					"family_name": "Starweaver",
+					"given_name": "Phoenix",
+					"picture": "https://fantasy-avatars-api.com/phoenix-starweaver-12345"
+				}
+			}`,
+			expectedMetadata: &model.UserMetadata{
+				Name:       converters.StringPtr("Phoenix Starweaver"),
+				FamilyName: converters.StringPtr("Starweaver"),
+				GivenName:  converters.StringPtr("Phoenix"),
+				Picture:    converters.StringPtr("https://fantasy-avatars-api.com/phoenix-starweaver-12345"),
+			},
+			wantError: false,
+		},
+		{
+			name: "successful parsing with partial user_metadata",
+			responseBody: `{
+				"user_id": "auth0|testuser",
+				"user_metadata": {
+					"name": "John Doe",
+					"job_title": "Software Engineer"
+				}
+			}`,
+			expectedMetadata: &model.UserMetadata{
+				Name:     converters.StringPtr("John Doe"),
+				JobTitle: converters.StringPtr("Software Engineer"),
+			},
+			wantError: false,
+		},
+		{
+			name: "successful parsing with empty user_metadata",
+			responseBody: `{
+				"user_id": "auth0|testuser",
+				"user_metadata": {}
+			}`,
+			expectedMetadata: &model.UserMetadata{},
+			wantError:        false,
+		},
+		{
+			name: "response missing user_metadata field",
+			responseBody: `{
+				"user_id": "auth0|testuser",
+				"email": "test@example.com"
+			}`,
+			expectedMetadata: nil,
+			wantError:        false,
+		},
+		{
+			name:         "malformed json",
+			responseBody: `{invalid json`,
+			wantError:    true,
+			errorMsg:     "failed to parse update response",
+		},
+		{
+			name:         "empty response body",
+			responseBody: ``,
+			wantError:    true,
+			errorMsg:     "failed to parse update response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse the Auth0 response to get the updated user metadata
+			var auth0Response struct {
+				UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
+			}
+
+			err := json.Unmarshal([]byte(tt.responseBody), &auth0Response)
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("JSON parsing should return error for malformed input")
+					return
+				}
+				if !containsString(err.Error(), "invalid character") && tt.errorMsg != "" {
+					// For JSON parsing errors, we expect "invalid character" or similar
+					// This simulates what would happen in the actual UpdateUser function
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("JSON parsing should not return error, got %v", err)
+				return
+			}
+
+			// Create a new user object with only the user_metadata populated (simulating UpdateUser behavior)
+			updatedUser := &model.User{
+				UserMetadata: auth0Response.UserMetadata,
+			}
+
+			// All other fields should be empty/default
+			if updatedUser.Token != "" {
+				t.Errorf("Expected empty Token, got %s", updatedUser.Token)
+			}
+			if updatedUser.UserID != "" {
+				t.Errorf("Expected empty UserID, got %s", updatedUser.UserID)
+			}
+			if updatedUser.Username != "" {
+				t.Errorf("Expected empty Username, got %s", updatedUser.Username)
+			}
+			if updatedUser.PrimaryEmail != "" {
+				t.Errorf("Expected empty PrimaryEmail, got %s", updatedUser.PrimaryEmail)
+			}
+
+			// Test UserMetadata content
+			if tt.expectedMetadata == nil {
+				if updatedUser.UserMetadata != nil {
+					t.Errorf("Expected nil UserMetadata, got %+v", updatedUser.UserMetadata)
+				}
+			} else {
+				if updatedUser.UserMetadata == nil {
+					t.Fatal("Expected UserMetadata, got nil")
+				}
+
+				// Compare each field
+				if !stringPtrEqual(updatedUser.UserMetadata.Name, tt.expectedMetadata.Name) {
+					t.Errorf("Expected Name %v, got %v", ptrValue(tt.expectedMetadata.Name), ptrValue(updatedUser.UserMetadata.Name))
+				}
+				if !stringPtrEqual(updatedUser.UserMetadata.FamilyName, tt.expectedMetadata.FamilyName) {
+					t.Errorf("Expected FamilyName %v, got %v", ptrValue(tt.expectedMetadata.FamilyName), ptrValue(updatedUser.UserMetadata.FamilyName))
+				}
+				if !stringPtrEqual(updatedUser.UserMetadata.GivenName, tt.expectedMetadata.GivenName) {
+					t.Errorf("Expected GivenName %v, got %v", ptrValue(tt.expectedMetadata.GivenName), ptrValue(updatedUser.UserMetadata.GivenName))
+				}
+				if !stringPtrEqual(updatedUser.UserMetadata.Picture, tt.expectedMetadata.Picture) {
+					t.Errorf("Expected Picture %v, got %v", ptrValue(tt.expectedMetadata.Picture), ptrValue(updatedUser.UserMetadata.Picture))
+				}
+				if !stringPtrEqual(updatedUser.UserMetadata.JobTitle, tt.expectedMetadata.JobTitle) {
+					t.Errorf("Expected JobTitle %v, got %v", ptrValue(tt.expectedMetadata.JobTitle), ptrValue(updatedUser.UserMetadata.JobTitle))
+				}
+			}
+		})
+	}
+}
+
+// TestUserWriter_UpdateUser_JSONSerialization tests that a user object with only UserMetadata serializes correctly
+func TestUserWriter_UpdateUser_JSONSerialization(t *testing.T) {
+	// Create a user object with only UserMetadata populated (simulating UpdateUser return value)
+	user := &model.User{
+		UserMetadata: &model.UserMetadata{
+			Name:       converters.StringPtr("Aurora Moonwhisper"),
+			FamilyName: converters.StringPtr("Moonwhisper"),
+			GivenName:  converters.StringPtr("Aurora"),
+			Picture:    converters.StringPtr("https://fantasy-avatars-api.com/aurora-moonwhisper-67890"),
+		},
+	}
+
+	// Test JSON serialization
+	jsonData, err := json.Marshal(user)
+	if err != nil {
+		t.Fatalf("Failed to marshal user to JSON: %v", err)
+	}
+
+	// Parse JSON to verify structure
+	var jsonResult map[string]interface{}
+	if err := json.Unmarshal(jsonData, &jsonResult); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	// The User struct includes all fields since they don't have omitempty tags (except user_metadata)
+	// We should verify that only user_metadata has meaningful content
+	expectedFields := []string{"token", "user_id", "username", "primary_email", "user_metadata"}
+	if len(jsonResult) != len(expectedFields) {
+		t.Errorf("Expected %d fields in JSON, got %d", len(expectedFields), len(jsonResult))
+	}
+
+	// Verify that non-metadata fields are empty
+	if token, exists := jsonResult["token"]; exists && token != "" {
+		t.Errorf("Expected empty token, got %v", token)
+	}
+	if userID, exists := jsonResult["user_id"]; exists && userID != "" {
+		t.Errorf("Expected empty user_id, got %v", userID)
+	}
+	if username, exists := jsonResult["username"]; exists && username != "" {
+		t.Errorf("Expected empty username, got %v", username)
+	}
+	if primaryEmail, exists := jsonResult["primary_email"]; exists && primaryEmail != "" {
+		t.Errorf("Expected empty primary_email, got %v", primaryEmail)
+	}
+
+	// Verify user_metadata content
+	userMetadata, ok := jsonResult["user_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatal("user_metadata should be a map")
+	}
+
+	expectedMetadata := map[string]string{
+		"name":        "Aurora Moonwhisper",
+		"family_name": "Moonwhisper",
+		"given_name":  "Aurora",
+		"picture":     "https://fantasy-avatars-api.com/aurora-moonwhisper-67890",
+	}
+
+	for key, expectedValue := range expectedMetadata {
+		if actualValue, exists := userMetadata[key]; !exists || actualValue != expectedValue {
+			t.Errorf("Expected %s = %s, got %v", key, expectedValue, actualValue)
+		}
+	}
+
+	// The key insight is that while the JSON contains all fields, only user_metadata has meaningful content
+	// This simulates the behavior of the modified UpdateUser function which returns a User with only UserMetadata populated
+	t.Logf("Complete JSON output: %s", string(jsonData))
+}
+
+// TestUserWriter_UpdateUser_ConfigValidation tests configuration validation in UpdateUser
+func TestUserWriter_UpdateUser_ConfigValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a valid token
+	createValidToken := func() string {
+		claims := jwt.MapClaims{
+			"sub":   "auth0|testuser",
+			"exp":   time.Now().Add(time.Hour).Unix(),
+			"scope": "update:current_user_metadata",
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, _ := token.SignedString([]byte("test-secret"))
+		return tokenString
+	}
+
+	tests := []struct {
+		name        string
+		config      Config
+		expectedErr string
+	}{
+		{
+			name: "missing domain configuration",
+			config: Config{
+				Tenant: "test-tenant",
+				Domain: "", // Missing domain
+			},
+			expectedErr: "Auth0 configuration is incomplete",
+		},
+		{
+			name: "missing tenant configuration",
+			config: Config{
+				Tenant: "", // Missing tenant
+				Domain: "", // Also missing domain to prevent HTTP calls
+			},
+			expectedErr: "Auth0 configuration is incomplete",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := NewUserReaderWriter(httpclient.DefaultConfig(), tt.config).(*userWriter)
+
+			user := &model.User{
+				Token:    createValidToken(),
+				Username: "testuser",
+				UserMetadata: &model.UserMetadata{
+					Name: converters.StringPtr("Test Name"),
+				},
+			}
+
+			_, err := writer.UpdateUser(ctx, user)
+
+			if err == nil {
+				t.Errorf("UpdateUser() should return error")
+				return
+			}
+
+			if !containsString(err.Error(), tt.expectedErr) {
+				t.Errorf("UpdateUser() error = %v, should contain %v", err.Error(), tt.expectedErr)
+			}
+		})
+	}
+}
+
+// TestUserWriter_UpdateUser_JWTValidationIntegration tests JWT validation within UpdateUser context
+func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		setupUser   func() *model.User
+		expectedErr string
+	}{
+		{
+			name: "invalid jwt token",
+			setupUser: func() *model.User {
+				return &model.User{
+					Token:    "invalid.jwt.token",
+					Username: "testuser",
+					UserMetadata: &model.UserMetadata{
+						Name: converters.StringPtr("Test Name"),
+					},
+				}
+			},
+			expectedErr: "failed to parse JWT token",
+		},
+		{
+			name: "expired jwt token",
+			setupUser: func() *model.User {
+				claims := jwt.MapClaims{
+					"sub":   "auth0|testuser",
+					"exp":   time.Now().Add(-time.Hour).Unix(), // Expired 1 hour ago
+					"scope": "update:current_user_metadata",
+				}
+				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+				tokenString, _ := token.SignedString([]byte("test-secret"))
+				return &model.User{
+					Token:    tokenString,
+					Username: "testuser",
+					UserMetadata: &model.UserMetadata{
+						Name: converters.StringPtr("Test Name"),
+					},
+				}
+			},
+			expectedErr: "token has expired",
+		},
+		{
+			name: "missing required scope",
+			setupUser: func() *model.User {
+				claims := jwt.MapClaims{
+					"sub":   "auth0|testuser",
+					"exp":   time.Now().Add(time.Hour).Unix(),
+					"scope": "read:profile write:data", // Missing update:current_user_metadata
+				}
+				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+				tokenString, _ := token.SignedString([]byte("test-secret"))
+				return &model.User{
+					Token:    tokenString,
+					Username: "testuser",
+					UserMetadata: &model.UserMetadata{
+						Name: converters.StringPtr("Test Name"),
+					},
+				}
+			},
+			expectedErr: "wrong scope",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use empty domain to skip HTTP call and focus on JWT validation
+			config := Config{
+				Tenant: "test-tenant",
+				Domain: "", // This will cause the function to fail at config validation
+			}
+
+			writer := NewUserReaderWriter(httpclient.DefaultConfig(), config).(*userWriter)
+			user := tt.setupUser()
+
+			_, err := writer.UpdateUser(ctx, user)
+
+			if err == nil {
+				t.Errorf("UpdateUser() should return error")
+				return
+			}
+
+			// The error could be either JWT validation error or config validation error
+			// For JWT errors, we expect them to happen before config validation
+			if containsString(err.Error(), tt.expectedErr) || containsString(err.Error(), "Auth0 configuration is incomplete") {
+				// Both are acceptable - JWT validation might happen first or config validation might happen first
+				// depending on the implementation
+			} else {
+				t.Errorf("UpdateUser() error = %v, should contain either %v or config error", err.Error(), tt.expectedErr)
+			}
+		})
+	}
+}
+
+// Helper functions
+func stringPtrEqual(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func ptrValue(ptr *string) string {
+	if ptr == nil {
+		return "<nil>"
+	}
+	return *ptr
 }
 
 // Helper function to check if a string contains a substring

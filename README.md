@@ -15,7 +15,7 @@ The service operates as a NATS-based microservice, responding to request/reply p
 │   └── workflows/                  # Github Action workflow files
 ├── charts/                         # Helm charts for running the service in kubernetes
 ├── cmd/                            # Services (main packages)
-│   └── auth-service/               # Auth service code
+│   └── server/                     # Auth service code
 ├── internal/                       # Internal service packages
 │   ├── domain/                     # Domain logic layer (business logic)
 │   │   ├── model/                  # Domain models and entities
@@ -23,6 +23,10 @@ The service operates as a NATS-based microservice, responding to request/reply p
 │   ├── service/                    # Service logic layer (use cases)
 │   └── infrastructure/             # Infrastructure layer
 ├── pkg/                            # Shared packages
+│   ├── constants/                  # Application constants
+│   ├── converters/                 # Data conversion utilities
+│   ├── errors/                     # Error handling utilities
+│   ├── httpclient/                 # HTTP client utilities
 │   └── log/                        # Logging utilities
 └── README.md                       # This documentation
 ```
@@ -37,7 +41,7 @@ The LFX v2 Auth Service operates as a NATS-based microservice that responds to r
 
 To update a user profile, send a NATS request to the following subject:
 
-**Subject:** `lfx.auth-service.user.update`  
+**Subject:** `lfx.auth-service.user_metadata.update`  
 **Pattern:** Request/Reply
 
 ##### Request Payload
@@ -72,7 +76,6 @@ The request payload must be a JSON object containing the user data to update. Th
 ##### Required Fields
 
 - `token`: JWT authentication token (required for all requests)
-- `username`: User's username (required for validation)
 - `user_metadata`: Object containing additional user profile information
 
 ##### Reply
@@ -83,7 +86,7 @@ The service returns a structured reply indicating success or failure:
 ```json
 {
   "success": true,
-  "user_metadata": {
+  "data": {
     "name": "Zephyr Stormwind",
     "given_name": "Zephyr",
     "family_name": "Stormwind",
@@ -114,9 +117,8 @@ The service returns a structured reply indicating success or failure:
 
 ```bash
 # Update user profile
-nats request lfx.auth-service.user.update '{
+nats request lfx.auth-service.user_metadata.update '{
   "token": "eyJhbG...",
-  "username": "aurora.moonbeam",
   "user_metadata": {
     "name": "Aurora Moonbeam",
     "job_title": "Senior DevOps Enchanter"

@@ -26,6 +26,14 @@ app:
   environment:
     NATS_URL:
       value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
+    # Repository type for user management
+    # It can be authelia, auth0 or mock
+    # If not set, it will default to mock
+    USER_REPOSITORY_TYPE:
+      value: mock 
     # Auth0 Management API configuration
-    AUTH0_TENANT: ""
-    AUTH0_DOMAIN: ""
+    ## Optional when using mock or autheliarepository type
+    AUTH0_TENANT:
+      value: null
+    AUTH0_DOMAIN:
+      value: null
