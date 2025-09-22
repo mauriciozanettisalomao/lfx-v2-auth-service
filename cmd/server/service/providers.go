@@ -19,6 +19,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/service"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 )
 
 var (
@@ -79,29 +80,48 @@ func natsInit(ctx context.Context) {
 }
 
 // newUserReaderWriter creates a UserReaderWriter implementation based on the environment variable.
-// Set USER_REPOSITORY_TYPE to "mock" to use the mock implementation, or "auth0" (or leave unset) for Auth0.
+// Set USER_REPOSITORY_TYPE to "mock" to explicitly use mock, or "auth0" to use Auth0.
 func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
+
 	userRepositoryType := os.Getenv(constants.UserRepositoryTypeEnvKey)
 	if userRepositoryType == "" {
-		userRepositoryType = constants.UserRepositoryTypeMock // default to mock for development
+		userRepositoryType = constants.UserRepositoryTypeAuth0 // default to auth0 when tenant is set
 	}
 
 	switch userRepositoryType {
 	case constants.UserRepositoryTypeMock:
-		slog.InfoContext(ctx, "using mock user repository implementation")
+		slog.DebugContext(ctx, "using mock user repository implementation")
 		return mock.NewUserReaderWriter(ctx)
 	case constants.UserRepositoryTypeAuth0:
-		slog.InfoContext(ctx, "using Auth0 user repository implementation")
-		return auth0.NewUserReaderWriter()
+
+		// Load Auth0 configuration from environment variables
+		auth0Tenant := os.Getenv(constants.Auth0TenantEnvKey)
+		auth0Domain := os.Getenv(constants.Auth0DomainEnvKey)
+
+		slog.DebugContext(ctx, "using Auth0 user repository implementation",
+			"tenant", auth0Tenant,
+			"domain", auth0Domain,
+		)
+
+		if auth0Domain == "" {
+			// Default to tenant.auth0.com if domain is not explicitly set
+			auth0Domain = fmt.Sprintf("%s.auth0.com", auth0Tenant)
+		}
+
+		auth0Config := auth0.Config{
+			Tenant: auth0Tenant,
+			Domain: auth0Domain,
+		}
+		return auth0.NewUserReaderWriter(httpclient.DefaultConfig(), auth0Config)
 	default:
-		slog.WarnContext(ctx, "unknown user repository type, defaulting to Auth0", "type", userRepositoryType)
-		return auth0.NewUserReaderWriter()
+		log.Fatalf("unsupported user repository type: %s", userRepositoryType)
+		return nil // This will never be reached due to log.Fatalf, but satisfies the linter
 	}
 }
 
 // QueueSubscriptions starts all NATS subscriptions with the provided dependencies
 func QueueSubscriptions(ctx context.Context) error {
-	slog.InfoContext(ctx, "starting NATS subscriptions")
+	slog.DebugContext(ctx, "starting NATS subscriptions")
 
 	// Initialize NATS client first
 	natsInit(ctx)
@@ -122,12 +142,12 @@ func QueueSubscriptions(ctx context.Context) error {
 
 	// Start subscriptions for each subject
 	subjects := map[string]func(context.Context, port.TransportMessenger){
-		constants.UserUpdateSubject: messageHandlerService.HandleMessage,
+		constants.UserMetadataUpdateSubject: messageHandlerService.HandleMessage,
 		// Add more subjects here as needed
 	}
 
 	for subject, handler := range subjects {
-		slog.InfoContext(ctx, "subscribing to NATS subject", "subject", subject)
+		slog.DebugContext(ctx, "subscribing to NATS subject", "subject", subject)
 		if _, err := natsClient.SubscribeWithTransportMessenger(ctx, subject, constants.AuthServiceQueue, handler); err != nil {
 			slog.ErrorContext(ctx, "failed to subscribe to NATS subject",
 				"error", err,
@@ -137,7 +157,7 @@ func QueueSubscriptions(ctx context.Context) error {
 		}
 	}
 
-	slog.InfoContext(ctx, "NATS subscriptions started successfully")
+	slog.DebugContext(ctx, "NATS subscriptions started successfully")
 	return nil
 }
 

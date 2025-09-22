@@ -26,7 +26,7 @@ func (mhs *MessageHandlerService) HandleMessage(ctx context.Context, msg port.Tr
 	slog.DebugContext(ctx, "handling NATS message")
 
 	handlers := map[string]func(ctx context.Context, msg port.TransportMessenger) ([]byte, error){
-		constants.UserUpdateSubject: mhs.messageHandler.UpdateUser,
+		constants.UserMetadataUpdateSubject: mhs.messageHandler.UpdateUser,
 	}
 
 	handler, ok := handlers[subject]

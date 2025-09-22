@@ -16,4 +16,11 @@ const (
 
 	// UserRepositoryTypeAuth0 is the value for the Auth0 user repository type
 	UserRepositoryTypeAuth0 = "auth0"
+
+	// Auth0 Management API configuration
+	// Auth0TenantEnvKey is the environment variable key for the Auth0 tenant
+	Auth0TenantEnvKey = "AUTH0_TENANT"
+
+	// Auth0DomainEnvKey is the environment variable key for the Auth0 domain
+	Auth0DomainEnvKey = "AUTH0_DOMAIN"
 )
