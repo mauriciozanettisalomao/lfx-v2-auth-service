@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 ---
 image:
-  repository: ghcr.io/linuxfoundation/lfx-v2-auth-service
+  repository: ghcr.io/linuxfoundation/lfx-v2-auth-service/server
   # tag is the container image tag (overrides appVersion from Chart.yaml)
   tag: ""
   # pullPolicy is the image pull policy
