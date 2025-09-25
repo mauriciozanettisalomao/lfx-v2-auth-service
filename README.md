@@ -71,6 +71,7 @@ john.doe
 **Error Reply:**
 ```json
 {
+  "success": false,
   "error": "user not found"
 }
 ```
