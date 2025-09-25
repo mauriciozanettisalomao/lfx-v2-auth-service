@@ -26,7 +26,6 @@ type RequestOption func(*apiRequest)
 type apiRequest struct {
 	httpClient  *Client
 	Method      string
-	Endpoint    string // Used for user-specific endpoints (e.g., "/metadata")
 	URL         string // Full URL for non-user-specific endpoints (overrides Endpoint if provided)
 	Body        any
 	Token       string
@@ -37,13 +36,6 @@ type apiRequest struct {
 func WithMethod(method string) RequestOption {
 	return func(req *apiRequest) {
 		req.Method = method
-	}
-}
-
-// WithEndpoint sets the endpoint for user-specific requests
-func WithEndpoint(endpoint string) RequestOption {
-	return func(req *apiRequest) {
-		req.Endpoint = endpoint
 	}
 }
 

@@ -42,7 +42,9 @@ The service operates as a NATS-based microservice, responding to request/reply p
 
 The LFX v2 Auth Service operates as a NATS-based microservice that responds to request/reply patterns on specific subjects. The service provides user management capabilities through NATS messaging.
 
-#### Email to Username Lookup
+---
+
+### Email to Username Lookup
 
 To look up a username by email address, send a NATS request to the following subject:
 
@@ -87,7 +89,9 @@ nats request lfx.auth-service.email_to_username zephyr.stormwind@mythicaltech.io
 - Linked/alternate email addresses are **not** supported for lookup
 - The service works with both Auth0 and mock repositories based on configuration
 
-#### User Update Operations
+---
+
+### User Update Operation
 
 To update a user profile, send a NATS request to the following subject:
 
