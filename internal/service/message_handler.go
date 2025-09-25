@@ -15,7 +15,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
-// UserUpdateResponse represents the response structure for user update operations
+// UserDataResponse represents the response structure for user update operations
 type UserDataResponse struct {
 	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`

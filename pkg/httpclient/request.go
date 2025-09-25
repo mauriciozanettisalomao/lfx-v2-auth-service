@@ -147,6 +147,16 @@ func (a *apiRequest) Call(ctx context.Context, resp any) (int, error) {
 		return response.StatusCode, fmt.Errorf("API returned status %d: %s", response.StatusCode, string(response.Body))
 	}
 
+	// If caller doesn't need the body or there's no content, skip JSON decoding.
+	if resp == nil || len(response.Body) == 0 {
+		slog.DebugContext(ctx, "API call successful",
+			"method", a.Method,
+			"status_code", response.StatusCode,
+			"description", a.Description,
+			"empty_body", len(response.Body) == 0)
+		return response.StatusCode, nil
+	}
+
 	if err := json.Unmarshal(response.Body, resp); err != nil {
 		slog.ErrorContext(ctx, "failed to parse API response", "error", err)
 		return -1, errors.NewUnexpected("failed to parse API response", err)
