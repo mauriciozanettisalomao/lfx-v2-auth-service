@@ -34,16 +34,20 @@ type Auth0UserMetadata struct {
 
 // ToUser converts an Auth0User to a User
 func (u *Auth0User) ToUser() *User {
-	return &User{
-		UserID:       u.UserID,
-		Username:     u.Username,
-		PrimaryEmail: u.Email,
-		UserMetadata: &UserMetadata{
+	var meta *UserMetadata
+	if u.UserMetadata != nil {
+		meta = &UserMetadata{
 			Name:       u.UserMetadata.Name,
 			FamilyName: u.UserMetadata.FamilyName,
 			GivenName:  u.UserMetadata.GivenName,
 			Picture:    u.UserMetadata.Picture,
 			JobTitle:   u.UserMetadata.JobTitle,
-		},
+		}
+	}
+	return &User{
+		UserID:       u.UserID,
+		Username:     u.Username,
+		PrimaryEmail: u.Email,
+		UserMetadata: meta,
 	}
 }

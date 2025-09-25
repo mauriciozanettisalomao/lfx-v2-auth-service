@@ -1,6 +1,6 @@
-# LFX V2 Auth Service
+# LFX v2 Auth Service
 
-This repository contains the source code for the LFX v2 platform authentication service.
+A NATS-based authentication and user management microservice for the LFX v2 platform. This service provides an abstraction layer between applications and identity providers (Auth0 and Authelia).
 
 ## Overview
 
@@ -8,7 +8,12 @@ The LFX v2 Auth Service provides authentication and profile access in the v2 Pla
 
 The service operates as a NATS-based microservice, responding to request/reply patterns on specific subjects.
 
-## File Structure
+### Prerequisites
+- Go 1.24.5+
+- NATS server
+- Auth0 configuration (optional, defaults to mock mode)
+
+### Installation
 
 ```bash
 ├── .github/                        # Github files
@@ -36,6 +41,51 @@ The service operates as a NATS-based microservice, responding to request/reply p
 ### NATS Request/Reply Pattern
 
 The LFX v2 Auth Service operates as a NATS-based microservice that responds to request/reply patterns on specific subjects. The service provides user management capabilities through NATS messaging.
+
+#### Email to Username Lookup
+
+To look up a username by email address, send a NATS request to the following subject:
+
+**Subject:** `lfx.auth-service.email_to_username`  
+**Pattern:** Request/Reply
+
+##### Request Payload
+
+The request payload should be a plain text email address (no JSON wrapping required):
+
+```
+user@example.com
+```
+
+##### Reply
+
+The service returns the username as plain text if the email is found:
+
+**Success Reply:**
+```
+john.doe
+```
+
+**Error Reply:**
+```json
+{
+  "error": "user not found"
+}
+```
+
+##### Example using NATS CLI
+
+```bash
+# Look up username by email
+nats request lfx.auth-service.email_to_username zephyr.stormwind@mythicaltech.io
+
+# Expected response: zephyr.stormwind
+```
+
+**Important Notes:**
+- This service searches for users by their **primary email** only
+- Linked/alternate email addresses are **not** supported for lookup
+- The service works with both Auth0 and mock repositories based on configuration
 
 #### User Update Operations
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
@@ -55,7 +56,14 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 
 func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
 
-	email := string(msg.Data())
+	if m.userReader == nil {
+		return m.errorResponse("user service unavailable"), nil
+	}
+
+	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
+	if email == "" {
+		return m.errorResponse("email is required"), nil
+	}
 
 	slog.DebugContext(ctx, "email to username",
 		"email", redaction.RedactEmail(email),

@@ -6,16 +6,17 @@ module github.com/linuxfoundation/lfx-v2-auth-service
 go 1.24.5
 
 require (
+	github.com/auth0/go-auth0 v1.28.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/nats-io/nats.go v1.45.0
 	goa.design/clue v1.2.3
 	goa.design/goa/v3 v3.22.2
+	golang.org/x/oauth2 v0.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/PuerkitoBio/rehttp v1.4.0 // indirect
-	github.com/auth0/go-auth0 v1.28.0 // indirect
 	github.com/aws/smithy-go v1.23.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
@@ -45,7 +46,6 @@ require (
 	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/mod v0.28.0 // indirect
 	golang.org/x/net v0.44.0 // indirect
-	golang.org/x/oauth2 v0.31.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/term v0.35.0 // indirect

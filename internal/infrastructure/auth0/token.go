@@ -157,7 +157,7 @@ func loadM2MConfigFromEnv(ctx context.Context, config Config) (m2mConfig, error)
 
 	decoded, err := base64.StdEncoding.DecodeString(privateKey)
 	if err != nil {
-		return m2mConfig{}, errors.NewUnexpected("AUTH0_PRIVATE_KEY appears to be base64 encoded but failed to decode", err)
+		return m2mConfig{}, errors.NewUnexpected("failed to base64-decode AUTH0_PRIVATE_BASE64_KEY", err)
 	}
 	privateKey = string(decoded)
 	//

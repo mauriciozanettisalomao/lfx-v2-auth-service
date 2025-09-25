@@ -114,7 +114,7 @@ func TestUserReaderOrchestrator_GetUser(t *testing.T) {
 				getUserFunc: tt.mockFunc,
 			}
 
-			orchestrator := NewuserReaderOrchestrator(
+			orchestrator := NewUserReaderOrchestrator(
 				WithUserReader(mockReader),
 			)
 
@@ -243,7 +243,7 @@ func TestUserReaderOrchestrator_SearchUser(t *testing.T) {
 				searchUserFunc: tt.mockFunc,
 			}
 
-			orchestrator := NewuserReaderOrchestrator(
+			orchestrator := NewUserReaderOrchestrator(
 				WithUserReader(mockReader),
 			)
 
@@ -261,16 +261,16 @@ func TestUserReaderOrchestrator_SearchUser(t *testing.T) {
 	}
 }
 
-func TestNewuserReaderOrchestrator(t *testing.T) {
+func TestNewUserReaderOrchestrator(t *testing.T) {
 	t.Run("create orchestrator with user reader", func(t *testing.T) {
 		mockReader := &mockUserReader{}
 
-		orchestrator := NewuserReaderOrchestrator(
+		orchestrator := NewUserReaderOrchestrator(
 			WithUserReader(mockReader),
 		)
 
 		if orchestrator == nil {
-			t.Error("NewuserReaderOrchestrator() returned nil")
+			t.Error("NewUserReaderOrchestrator() returned nil")
 		}
 
 		// Verify interface implementation
@@ -278,10 +278,10 @@ func TestNewuserReaderOrchestrator(t *testing.T) {
 	})
 
 	t.Run("create orchestrator without options", func(t *testing.T) {
-		orchestrator := NewuserReaderOrchestrator()
+		orchestrator := NewUserReaderOrchestrator()
 
 		if orchestrator == nil {
-			t.Error("NewuserReaderOrchestrator() returned nil")
+			t.Error("NewUserReaderOrchestrator() returned nil")
 		}
 	})
 }
@@ -291,7 +291,7 @@ func TestWithUserReader(t *testing.T) {
 		mockReader := &mockUserReader{}
 
 		// Create orchestrator with the option
-		orchestrator := NewuserReaderOrchestrator(
+		orchestrator := NewUserReaderOrchestrator(
 			WithUserReader(mockReader),
 		)
 
@@ -301,7 +301,7 @@ func TestWithUserReader(t *testing.T) {
 				t.Error("WithUserReader() option did not set the user reader correctly")
 			}
 		} else {
-			t.Error("NewuserReaderOrchestrator() did not return expected type")
+			t.Error("NewUserReaderOrchestrator() did not return expected type")
 		}
 	})
 }

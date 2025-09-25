@@ -75,18 +75,24 @@ func WithDescription(description string) RequestOption {
 	}
 }
 
-// CallWithToken makes an HTTP call with a specific token, overriding the configured token
+// Call makes an HTTP call with a configured data
 func (a *apiRequest) Call(ctx context.Context, resp any) (int, error) {
 	if a.Token == "" {
 		return -1, errors.NewValidation("no authentication token available (neither user token nor M2M token)")
 	}
 
 	if a.URL == "" {
-		return -1, errors.NewValidation("URL is required when URL is not provided")
+		return -1, errors.NewValidation("URL is required")
 	}
 
-	var requestBody []byte
-	var err error
+	if strings.TrimSpace(a.Method) == "" {
+		return -1, errors.NewValidation("HTTP method is required")
+	}
+
+	var (
+		requestBody []byte
+		err         error
+	)
 
 	// Prepare the request body if provided
 	if a.Body != nil {
@@ -141,7 +147,7 @@ func (a *apiRequest) Call(ctx context.Context, resp any) (int, error) {
 		return response.StatusCode, fmt.Errorf("API returned status %d: %s", response.StatusCode, string(response.Body))
 	}
 
-	if err := json.Unmarshal(response.Body, &resp); err != nil {
+	if err := json.Unmarshal(response.Body, resp); err != nil {
 		slog.ErrorContext(ctx, "failed to parse API response", "error", err)
 		return -1, errors.NewUnexpected("failed to parse API response", err)
 	}

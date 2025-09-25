@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ var (
 	// criteriaEndpointMapping is a map of criteria types and their corresponding API endpoints
 	criteriaEndpointMapping = map[string]string{
 		constants.CriteriaTypeEmail:    "users-by-email?email=%s",
-		constants.CriteriaTypeUsername: "users?q=identities.user_id::%s&search_engine=v3",
+		constants.CriteriaTypeUsername: `users?q=identities.user_id:%s&search_engine=v3`,
 	}
 )
 
@@ -142,13 +143,13 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 				"criteria", criteria,
 				"email", redaction.RedactEmail(user.PrimaryEmail),
 			)
-			return strings.ToLower(user.PrimaryEmail)
+			return url.QueryEscape(strings.ToLower(strings.TrimSpace(user.PrimaryEmail)))
 		case constants.CriteriaTypeUsername:
 			slog.DebugContext(ctx, "searching user",
 				"criteria", criteria,
 				"username", redaction.Redact(user.Username),
 			)
-			return user.Username
+			return url.QueryEscape(strings.TrimSpace(user.Username))
 		}
 		return ""
 	}

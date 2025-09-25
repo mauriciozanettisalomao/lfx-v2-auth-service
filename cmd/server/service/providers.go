@@ -143,7 +143,7 @@ func QueueSubscriptions(ctx context.Context) error {
 				service.NewUserWriterOrchestrator(service.WithUserWriter(newUserReaderWriter(ctx))),
 			),
 			service.WithUserReaderForMessageHandler(
-				service.NewuserReaderOrchestrator(service.WithUserReader(newUserReaderWriter(ctx))),
+				service.NewUserReaderOrchestrator(service.WithUserReader(newUserReaderWriter(ctx))),
 			),
 		),
 	}
