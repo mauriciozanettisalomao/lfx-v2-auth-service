@@ -27,7 +27,6 @@ app:
     # If not set, it will default to mock
     USER_REPOSITORY_TYPE:
       value: mock
-    
     # Auth0 Management API configuration
     ## Optional when using mock or authelia repository type
     AUTH0_TENANT:

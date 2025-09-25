@@ -274,7 +274,7 @@ func TestNewuserReaderOrchestrator(t *testing.T) {
 		}
 
 		// Verify interface implementation
-		var _ UserServiceReader = orchestrator
+		var _ = UserServiceReader(orchestrator)
 	})
 
 	t.Run("create orchestrator without options", func(t *testing.T) {
