@@ -15,8 +15,8 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 )
 
-func TestUserWriter_jwtVerify(t *testing.T) {
-	writer := &userWriter{}
+func TestUserReaderWriter_jwtVerify(t *testing.T) {
+	writer := &userReaderWriter{}
 	ctx := context.Background()
 
 	// Helper function to create a test JWT token
@@ -216,7 +216,7 @@ func TestUserWriter_jwtVerify(t *testing.T) {
 	}
 }
 
-func TestUserWriter_UpdateUser(t *testing.T) {
+func TestUserReaderWriter_UpdateUser(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a valid token
@@ -246,14 +246,14 @@ func TestUserWriter_UpdateUser(t *testing.T) {
 			},
 			user: &model.User{
 				Token:        createValidToken(),
-				Username:     "testuser",
+				Username:     "TestUser",
 				PrimaryEmail: "test@example.com",
 				UserMetadata: &model.UserMetadata{
 					Name: converters.StringPtr("Test User"),
 				},
 			},
 			wantError: true,
-			errorMsg:  "Auth0 configuration is incomplete",
+			errorMsg:  "Auth0 domain configuration is missing",
 		},
 		{
 			name: "valid JWT validation only (no HTTP call due to missing domain)",
@@ -263,22 +263,24 @@ func TestUserWriter_UpdateUser(t *testing.T) {
 			},
 			user: &model.User{
 				Token:        createValidToken(),
-				Username:     "testuser",
+				Username:     "TestUser",
 				PrimaryEmail: "test@example.com",
 				UserMetadata: &model.UserMetadata{
 					Name: converters.StringPtr("Test User"),
 				},
 			},
 			wantError: true, // Will fail due to incomplete config
-			errorMsg:  "Auth0 configuration is incomplete",
+			errorMsg:  "Auth0 domain configuration is missing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			writer := NewUserReaderWriter(httpclient.DefaultConfig(), tt.config).(*userWriter)
+			readerWriter := &userReaderWriter{}
+			readerWriter.httpClient = httpclient.NewClient(httpclient.DefaultConfig())
+			readerWriter.config = tt.config
 
-			updatedUser, err := writer.UpdateUser(ctx, tt.user)
+			updatedUser, err := readerWriter.UpdateUser(ctx, tt.user)
 
 			if tt.wantError {
 				if err == nil {
@@ -303,7 +305,7 @@ func TestUserWriter_UpdateUser(t *testing.T) {
 	}
 }
 
-func TestUserWriter_UpdateUser_JWTValidation(t *testing.T) {
+func TestUserReaderWriter_UpdateUser_JWTValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a valid token
@@ -319,11 +321,11 @@ func TestUserWriter_UpdateUser_JWTValidation(t *testing.T) {
 	}
 
 	// Test that JWT validation works correctly by testing the jwtVerify method directly
-	writer := &userWriter{}
+	writer := &userReaderWriter{}
 
 	user := &model.User{
 		Token:        createValidToken(),
-		Username:     "testuser",
+		Username:     "TestUser",
 		PrimaryEmail: "test@example.com",
 	}
 
@@ -340,7 +342,7 @@ func TestUserWriter_UpdateUser_JWTValidation(t *testing.T) {
 	}
 }
 
-func TestUserWriter_GetUser(t *testing.T) {
+func TestUserReaderWriter_GetUser(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -359,7 +361,7 @@ func TestUserWriter_GetUser(t *testing.T) {
 			user: &model.User{
 				Token:        "some-token",
 				UserID:       "", // Missing user_id
-				Username:     "testuser",
+				Username:     "TestUser",
 				PrimaryEmail: "test@example.com",
 			},
 			wantError: true,
@@ -374,19 +376,21 @@ func TestUserWriter_GetUser(t *testing.T) {
 			user: &model.User{
 				Token:        "some-token",
 				UserID:       "auth0|testuser",
-				Username:     "testuser",
+				Username:     "TestUser",
 				PrimaryEmail: "test@example.com",
 			},
 			wantError: true,
-			errorMsg:  "Auth0 configuration is incomplete",
+			errorMsg:  "Auth0 domain configuration is missing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			writer := NewUserReaderWriter(httpclient.DefaultConfig(), tt.config).(*userWriter)
+			readerWriter := &userReaderWriter{}
+			readerWriter.httpClient = httpclient.NewClient(httpclient.DefaultConfig())
+			readerWriter.config = tt.config
 
-			_, err := writer.GetUser(ctx, tt.user)
+			_, err := readerWriter.GetUser(ctx, tt.user)
 
 			if tt.wantError {
 				if err == nil {
@@ -404,8 +408,8 @@ func TestUserWriter_GetUser(t *testing.T) {
 	}
 }
 
-// TestUserWriter_ParseAuth0Response tests the parsing logic for Auth0 responses in UpdateUser
-func TestUserWriter_ParseAuth0Response(t *testing.T) {
+// TestUserReaderWriter_ParseAuth0Response tests the parsing logic for Auth0 responses in UpdateUser
+func TestUserReaderWriter_ParseAuth0Response(t *testing.T) {
 	tests := []struct {
 		name             string
 		responseBody     string
@@ -554,8 +558,8 @@ func TestUserWriter_ParseAuth0Response(t *testing.T) {
 	}
 }
 
-// TestUserWriter_UpdateUser_JSONSerialization tests that a user object with only UserMetadata serializes correctly
-func TestUserWriter_UpdateUser_JSONSerialization(t *testing.T) {
+// TestUserReaderWriter_UpdateUser_JSONSerialization tests that a user object with only UserMetadata serializes correctly
+func TestUserReaderWriter_UpdateUser_JSONSerialization(t *testing.T) {
 	// Create a user object with only UserMetadata populated (simulating UpdateUser return value)
 	user := &model.User{
 		UserMetadata: &model.UserMetadata{
@@ -623,8 +627,8 @@ func TestUserWriter_UpdateUser_JSONSerialization(t *testing.T) {
 	t.Logf("Complete JSON output: %s", string(jsonData))
 }
 
-// TestUserWriter_UpdateUser_ConfigValidation tests configuration validation in UpdateUser
-func TestUserWriter_UpdateUser_ConfigValidation(t *testing.T) {
+// TestUserReaderWriter_UpdateUser_ConfigValidation tests configuration validation in UpdateUser
+func TestUserReaderWriter_UpdateUser_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a valid token
@@ -650,7 +654,7 @@ func TestUserWriter_UpdateUser_ConfigValidation(t *testing.T) {
 				Tenant: "test-tenant",
 				Domain: "", // Missing domain
 			},
-			expectedErr: "Auth0 configuration is incomplete",
+			expectedErr: "Auth0 domain configuration is missing",
 		},
 		{
 			name: "missing tenant configuration",
@@ -658,23 +662,25 @@ func TestUserWriter_UpdateUser_ConfigValidation(t *testing.T) {
 				Tenant: "", // Missing tenant
 				Domain: "", // Also missing domain to prevent HTTP calls
 			},
-			expectedErr: "Auth0 configuration is incomplete",
+			expectedErr: "Auth0 domain configuration is missing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			writer := NewUserReaderWriter(httpclient.DefaultConfig(), tt.config).(*userWriter)
+			readerWriter := &userReaderWriter{}
+			readerWriter.httpClient = httpclient.NewClient(httpclient.DefaultConfig())
+			readerWriter.config = tt.config
 
 			user := &model.User{
 				Token:    createValidToken(),
-				Username: "testuser",
+				Username: "TestUser",
 				UserMetadata: &model.UserMetadata{
 					Name: converters.StringPtr("Test Name"),
 				},
 			}
 
-			_, err := writer.UpdateUser(ctx, user)
+			_, err := readerWriter.UpdateUser(ctx, user)
 
 			if err == nil {
 				t.Errorf("UpdateUser() should return error")
@@ -688,8 +694,8 @@ func TestUserWriter_UpdateUser_ConfigValidation(t *testing.T) {
 	}
 }
 
-// TestUserWriter_UpdateUser_JWTValidationIntegration tests JWT validation within UpdateUser context
-func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
+// TestUserReaderWriter_UpdateUser_JWTValidationIntegration tests JWT validation within UpdateUser context
+func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -702,7 +708,7 @@ func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 			setupUser: func() *model.User {
 				return &model.User{
 					Token:    "invalid.jwt.token",
-					Username: "testuser",
+					Username: "TestUser",
 					UserMetadata: &model.UserMetadata{
 						Name: converters.StringPtr("Test Name"),
 					},
@@ -722,7 +728,7 @@ func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 				tokenString, _ := token.SignedString([]byte("test-secret"))
 				return &model.User{
 					Token:    tokenString,
-					Username: "testuser",
+					Username: "TestUser",
 					UserMetadata: &model.UserMetadata{
 						Name: converters.StringPtr("Test Name"),
 					},
@@ -742,7 +748,7 @@ func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 				tokenString, _ := token.SignedString([]byte("test-secret"))
 				return &model.User{
 					Token:    tokenString,
-					Username: "testuser",
+					Username: "TestUser",
 					UserMetadata: &model.UserMetadata{
 						Name: converters.StringPtr("Test Name"),
 					},
@@ -760,10 +766,13 @@ func TestUserWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 				Domain: "", // This will cause the function to fail at config validation
 			}
 
-			writer := NewUserReaderWriter(httpclient.DefaultConfig(), config).(*userWriter)
+			readerWriter := &userReaderWriter{}
+			readerWriter.httpClient = httpclient.NewClient(httpclient.DefaultConfig())
+			readerWriter.config = config
+
 			user := tt.setupUser()
 
-			_, err := writer.UpdateUser(ctx, user)
+			_, err := readerWriter.UpdateUser(ctx, user)
 
 			if err == nil {
 				t.Errorf("UpdateUser() should return error")

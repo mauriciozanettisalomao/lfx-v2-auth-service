@@ -112,7 +112,18 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 			Tenant: auth0Tenant,
 			Domain: auth0Domain,
 		}
-		return auth0.NewUserReaderWriter(httpclient.DefaultConfig(), auth0Config)
+
+		slog.DebugContext(ctx, "Auth0 client initialized with M2M token support",
+			"tenant", auth0Tenant,
+			"domain", auth0Domain,
+		)
+
+		userReaderWriter, err := auth0.NewUserReaderWriter(ctx, httpclient.DefaultConfig(), auth0Config)
+		if err != nil {
+			log.Fatalf("failed to create Auth0 user reader writer: %v", err)
+		}
+
+		return userReaderWriter
 	default:
 		log.Fatalf("unsupported user repository type: %s", userRepositoryType)
 		return nil // This will never be reached due to log.Fatalf, but satisfies the linter

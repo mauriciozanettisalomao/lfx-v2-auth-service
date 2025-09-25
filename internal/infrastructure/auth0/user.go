@@ -30,6 +30,8 @@ const (
 type Config struct {
 	Tenant string
 	Domain string
+	// M2MTokenManager for machine-to-machine authentication
+	M2MTokenManager *TokenManager
 }
 
 // userUpdateRequest represents the request body for updating a user in Auth0
@@ -37,12 +39,12 @@ type userUpdateRequest struct {
 	UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
 }
 
-type userWriter struct {
+type userReaderWriter struct {
 	config     Config
 	httpClient *httpclient.Client
 }
 
-func (u *userWriter) jwtVerify(ctx context.Context, user *model.User) error {
+func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) error {
 	if strings.TrimSpace(user.Token) == "" {
 		return fmt.Errorf("token is required")
 	}
@@ -134,10 +136,24 @@ type APIResponse struct {
 }
 
 // callAPI makes a generic HTTP call to Auth0 Management API
-func (u *userWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse, error) {
-	if u.config.Domain == "" || req.Token == "" {
-		return nil, errors.NewValidation(fmt.Sprintf("Auth0 configuration is incomplete: domain=%s, token_present=%t",
-			u.config.Domain, req.Token != ""))
+func (u *userReaderWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse, error) {
+	if u.config.Domain == "" {
+		return nil, errors.NewValidation("Auth0 domain configuration is missing")
+	}
+
+	// Use provided token or get M2M token
+	token := req.Token
+	if token == "" && u.config.M2MTokenManager != nil {
+		m2mToken, err := u.config.M2MTokenManager.GetToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get M2M token: %w", err)
+		}
+		token = m2mToken
+		slog.DebugContext(ctx, "using M2M token for API call", "user_id", req.UserID)
+	}
+
+	if token == "" {
+		return nil, errors.NewValidation("no authentication token available (neither user token nor M2M token)")
 	}
 
 	// Build the Auth0 Management API URL
@@ -162,7 +178,7 @@ func (u *userWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse,
 		"request_body", string(requestBody))
 
 	// Prepare headers (normalize Authorization token)
-	authHeader := strings.TrimSpace(req.Token)
+	authHeader := strings.TrimSpace(token)
 	lower := strings.ToLower(authHeader)
 	if !strings.HasPrefix(lower, "bearer ") {
 		authHeader = "Bearer " + authHeader
@@ -217,7 +233,7 @@ func (u *userWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse,
 	return apiResponse, nil
 }
 
-func (u *userWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
+func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
 
 	slog.DebugContext(ctx, "getting user", "user_id", user.UserID)
 
@@ -270,7 +286,7 @@ func (u *userWriter) GetUser(ctx context.Context, user *model.User) (*model.User
 	return user, nil
 }
 
-func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 
 	if err := u.jwtVerify(ctx, user); err != nil {
 		slog.ErrorContext(ctx, "jwt verify failed", "error", err)
@@ -318,13 +334,19 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	return updatedUser, nil
 }
 
-// NewUserReaderWriter creates a new UserReaderWriter with the provided configuration
-func NewUserReaderWriter(httpConfig httpclient.Config, auth0Config Config) port.UserReaderWriter {
-	// Create HTTP client with default configuration
-	httpClient := httpclient.NewClient(httpConfig)
+// NewUserReaderWriter  creates a new UserReaderWriter with the provided configuration
+func NewUserReaderWriter(ctx context.Context, httpConfig httpclient.Config, auth0Config Config) (port.UserReaderWriter, error) {
 
-	return &userWriter{
-		config:     auth0Config,
-		httpClient: httpClient,
+	// Add M2M token manager to config
+	m2mTokenManager, err := NewM2MTokenManager(ctx, auth0Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create M2M token manager: %w", err)
 	}
+
+	auth0Config.M2MTokenManager = m2mTokenManager
+
+	return &userReaderWriter{
+		config:     auth0Config,
+		httpClient: httpclient.NewClient(httpConfig),
+	}, nil
 }
