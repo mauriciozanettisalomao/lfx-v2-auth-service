@@ -65,6 +65,9 @@ func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg po
 		PrimaryEmail: email,
 	}
 
+	// SearchUser is used to find “root” user emails, not linked email
+	//
+	// Finding users by alternate emails is NOT available
 	user, err := m.userReader.SearchUser(ctx, user, constants.CriteriaTypeEmail)
 	if err != nil {
 		return m.errorResponse(err.Error()), nil
