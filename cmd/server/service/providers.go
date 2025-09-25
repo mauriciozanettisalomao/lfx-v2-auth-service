@@ -142,6 +142,9 @@ func QueueSubscriptions(ctx context.Context) error {
 			service.WithUserWriterForMessageHandler(
 				service.NewUserWriterOrchestrator(service.WithUserWriter(newUserReaderWriter(ctx))),
 			),
+			service.WithUserReaderForMessageHandler(
+				service.NewuserReaderOrchestrator(service.WithUserReader(newUserReaderWriter(ctx))),
+			),
 		),
 	}
 
@@ -154,6 +157,7 @@ func QueueSubscriptions(ctx context.Context) error {
 	// Start subscriptions for each subject
 	subjects := map[string]func(context.Context, port.TransportMessenger){
 		constants.UserMetadataUpdateSubject: messageHandlerService.HandleMessage,
+		constants.UserEmailToUserSubject:    messageHandlerService.HandleMessage,
 		// Add more subjects here as needed
 	}
 

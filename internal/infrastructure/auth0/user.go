@@ -4,11 +4,8 @@
 package auth0
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -18,12 +15,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 const (
 	userMetadataRequiredScope = "update:current_user_metadata"
+
+	usernameFilter = "Username-Password-Authentication"
+)
+
+var (
+	// criteriaEndpointMapping is a map of criteria types and their corresponding API endpoints
+	criteriaEndpointMapping = map[string]string{
+		constants.CriteriaTypeEmail:    "users-by-email?email=%s",
+		constants.CriteriaTypeUsername: "users?q=identities.user_id::%s&search_engine=v3",
+	}
 )
 
 // Config holds the configuration for Auth0 Management API
@@ -119,118 +128,79 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	return nil
 }
 
-// APIRequest represents a generic API request configuration
-type APIRequest struct {
-	Method      string
-	Endpoint    string
-	Body        interface{}
-	UserID      string
-	Token       string
-	Description string
-}
+func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 
-// APIResponse represents a generic API response
-type APIResponse struct {
-	StatusCode int
-	Body       []byte
-}
-
-// callAPI makes a generic HTTP call to Auth0 Management API
-func (u *userReaderWriter) callAPI(ctx context.Context, req APIRequest) (*APIResponse, error) {
-	if u.config.Domain == "" {
-		return nil, errors.NewValidation("Auth0 domain configuration is missing")
+	endpoint, ok := criteriaEndpointMapping[criteria]
+	if !ok {
+		return nil, errors.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
 	}
 
-	// Use provided token or get M2M token
-	token := req.Token
-	if token == "" && u.config.M2MTokenManager != nil {
-		m2mToken, err := u.config.M2MTokenManager.GetToken(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get M2M token: %w", err)
+	param := func(criteriaType string) string {
+		switch criteriaType {
+		case constants.CriteriaTypeEmail:
+			slog.DebugContext(ctx, "searching user",
+				"criteria", criteria,
+				"email", redaction.RedactEmail(user.PrimaryEmail),
+			)
+			return strings.ToLower(user.PrimaryEmail)
+		case constants.CriteriaTypeUsername:
+			slog.DebugContext(ctx, "searching user",
+				"criteria", criteria,
+				"username", redaction.Redact(user.Username),
+			)
+			return user.Username
 		}
-		token = m2mToken
-		slog.DebugContext(ctx, "using M2M token for API call", "user_id", req.UserID)
+		return ""
 	}
 
-	if token == "" {
-		return nil, errors.NewValidation("no authentication token available (neither user token nor M2M token)")
+	if user.Token == "" {
+		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
+		if errGetToken != nil {
+			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
+		}
+		user.Token = m2mToken
 	}
 
-	// Build the Auth0 Management API URL
-	apiURL := fmt.Sprintf("https://%s/api/v2/users/%s%s", u.config.Domain, req.UserID, req.Endpoint)
+	endpointWithParam := fmt.Sprintf(endpoint, param(criteria))
+	url := fmt.Sprintf("https://%s/api/v2/%s", u.config.Domain, endpointWithParam)
 
-	var requestBody []byte
-	var err error
+	apiRequest := httpclient.NewAPIRequest(
+		u.httpClient,
+		httpclient.WithMethod(http.MethodGet),
+		httpclient.WithURL(url),
+		httpclient.WithToken(user.Token),
+		httpclient.WithDescription("search user"),
+	)
 
-	// Prepare the request body if provided
-	if req.Body != nil {
-		requestBody, err = json.Marshal(req.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	var users []model.Auth0User
+
+	statusCode, errCall := apiRequest.Call(ctx, &users)
+	if errCall != nil {
+		slog.ErrorContext(ctx, "failed to search user",
+			"error", errCall,
+			"status_code", statusCode,
+		)
+		return nil, errors.NewUnexpected("failed to search user", errCall)
+	}
+
+	if len(users) == 0 {
+		return nil, errors.NewNotFound("user not found")
+	}
+
+	for _, user := range users {
+		// identities.user_id:{{username}} AND identities.connection:Username-Password-Authentication
+		// It doesn't work like an AND, it works like an OR
+		// So it's necessary to check if the identity is the one we are looking for
+		for _, identity := range user.Identities {
+			if identity.Connection == usernameFilter {
+				user.Username = identity.UserID
+				return user.ToUser(), nil
+			}
 		}
 	}
 
-	slog.DebugContext(ctx, "calling Auth0 Management API",
-		"method", req.Method,
-		"user_id", req.UserID,
-		"url", apiURL,
-		"description", req.Description,
-		"request_body", string(requestBody))
+	return nil, errors.NewNotFound("user not found by criteria")
 
-	// Prepare headers (normalize Authorization token)
-	authHeader := strings.TrimSpace(token)
-	lower := strings.ToLower(authHeader)
-	if !strings.HasPrefix(lower, "bearer ") {
-		authHeader = "Bearer " + authHeader
-	}
-	headers := map[string]string{
-		"Authorization": authHeader,
-		"Accept":        "application/json",
-	}
-
-	// Add Content-Type for requests with body
-	if req.Body != nil {
-		headers["Content-Type"] = "application/json"
-	}
-
-	var bodyReader io.Reader
-	if requestBody != nil {
-		bodyReader = bytes.NewReader(requestBody)
-	}
-
-	// Make the HTTP request
-	response, err := u.httpClient.Request(ctx, req.Method, apiURL, bodyReader, headers)
-	if err != nil {
-		slog.ErrorContext(ctx, "Auth0 Management API request failed",
-			"error", err,
-			"user_id", req.UserID,
-			"method", req.Method,
-			"description", req.Description)
-		return nil, fmt.Errorf("failed to %s: %w", req.Description, err)
-	}
-
-	apiResponse := &APIResponse{
-		StatusCode: response.StatusCode,
-		Body:       response.Body,
-	}
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		slog.ErrorContext(ctx, "Auth0 Management API returned error",
-			"status_code", response.StatusCode,
-			"response_body", string(response.Body),
-			"user_id", req.UserID,
-			"method", req.Method,
-			"description", req.Description)
-		return apiResponse, fmt.Errorf("Auth0 API returned status %d: %s", response.StatusCode, string(response.Body))
-	}
-
-	slog.DebugContext(ctx, "Auth0 Management API call successful",
-		"user_id", req.UserID,
-		"method", req.Method,
-		"status_code", response.StatusCode,
-		"description", req.Description)
-
-	return apiResponse, nil
 }
 
 func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -242,21 +212,13 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 		return nil, errors.NewValidation("user_id is required to get user")
 	}
 
-	// Call Auth0 Management API to get the user
-	apiRequest := APIRequest{
-		Method:      http.MethodGet,
-		Endpoint:    "",  // Empty for direct user endpoint
-		Body:        nil, // No body for GET request
-		UserID:      user.UserID,
-		Token:       user.Token,
-		Description: "get user details",
-	}
-
-	response, err := u.callAPI(ctx, apiRequest)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to get user from Auth0", "error", err, "user_id", user.UserID)
-		return nil, fmt.Errorf("failed to get user from Auth0: %w", err)
-	}
+	apiRequest := httpclient.NewAPIRequest(
+		u.httpClient,
+		httpclient.WithMethod(http.MethodGet),
+		httpclient.WithURL(fmt.Sprintf("https://%s/api/v2/users/%s", u.config.Domain, user.UserID)),
+		httpclient.WithToken(user.Token),
+		httpclient.WithDescription("get user details"),
+	)
 
 	// Parse the response to update the user object
 	var auth0User struct {
@@ -266,9 +228,14 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 		UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
 	}
 
-	if err := json.Unmarshal(response.Body, &auth0User); err != nil {
-		slog.ErrorContext(ctx, "failed to parse Auth0 user response", "error", err, "user_id", user.UserID)
-		return nil, fmt.Errorf("failed to parse user data: %w", err)
+	statusCode, errCall := apiRequest.Call(ctx, &auth0User)
+	if errCall != nil {
+		slog.ErrorContext(ctx, "failed to get user from Auth0",
+			"error", errCall,
+			"status_code", statusCode,
+			"user_id", user.UserID,
+		)
+		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
 	}
 
 	// Update the user object with data from Auth0
@@ -300,29 +267,27 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 	updateRequest := userUpdateRequest{UserMetadata: user.UserMetadata}
 
 	// Call Auth0 Management API to update the user
-	apiRequest := APIRequest{
-		Method:      http.MethodPatch,
-		Endpoint:    "", // Empty for direct user endpoint
-		Body:        updateRequest,
-		UserID:      user.UserID,
-		Token:       user.Token,
-		Description: "update user metadata",
-	}
+	apiRequest := httpclient.NewAPIRequest(
+		u.httpClient,
+		httpclient.WithMethod(http.MethodPatch),
+		httpclient.WithURL(fmt.Sprintf("https://%s/api/v2/users/%s", u.config.Domain, user.UserID)),
+		httpclient.WithToken(user.Token),
+		httpclient.WithDescription("update user metadata"),
+		httpclient.WithBody(updateRequest),
+	)
 
-	response, err := u.callAPI(ctx, apiRequest)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to update user in Auth0", "error", err, "user_id", user.UserID)
-		return nil, fmt.Errorf("failed to update user in Auth0: %w", err)
-	}
-
-	// Parse the Auth0 response to get the updated user metadata
 	var auth0Response struct {
 		UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
 	}
 
-	if err := json.Unmarshal(response.Body, &auth0Response); err != nil {
-		slog.ErrorContext(ctx, "failed to parse Auth0 update response", "error", err, "user_id", user.UserID)
-		return nil, fmt.Errorf("failed to parse update response: %w", err)
+	statusCode, errCall := apiRequest.Call(ctx, &auth0Response)
+	if errCall != nil {
+		slog.ErrorContext(ctx, "failed to update user in Auth0",
+			"error", errCall,
+			"status_code", statusCode,
+			"user_id", user.UserID,
+		)
+		return nil, errors.NewUnexpected("failed to update user in Auth0", errCall)
 	}
 
 	// Create a new user object with only the user_metadata populated
@@ -330,7 +295,9 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 		UserMetadata: auth0Response.UserMetadata,
 	}
 
-	slog.InfoContext(ctx, "user updated successfully", "user_id", user.UserID)
+	slog.DebugContext(ctx, "user updated successfully",
+		"user_id", user.UserID,
+	)
 	return updatedUser, nil
 }
 

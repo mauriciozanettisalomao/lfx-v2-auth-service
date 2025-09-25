@@ -18,6 +18,7 @@ type UserReaderWriter interface {
 // UserReader defines the behavior of the user reader
 type UserReader interface {
 	GetUser(ctx context.Context, user *model.User) (*model.User, error)
+	SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error)
 }
 
 // UserWriter defines the behavior of the user writer

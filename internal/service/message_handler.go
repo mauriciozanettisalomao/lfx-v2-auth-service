@@ -6,9 +6,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 // UserUpdateResponse represents the response structure for user update operations
@@ -21,6 +24,7 @@ type UserDataResponse struct {
 // messageHandlerOrchestrator orchestrates the message handling process
 type messageHandlerOrchestrator struct {
 	userWriter UserServiceWriter
+	userReader UserServiceReader
 }
 
 // messageHandlerOrchestratorOption defines a function type for setting options
@@ -33,6 +37,13 @@ func WithUserWriterForMessageHandler(userWriter UserServiceWriter) messageHandle
 	}
 }
 
+// WithUserReaderForMessageHandler sets the user reader for the message handler orchestrator
+func WithUserReaderForMessageHandler(userReader UserServiceReader) messageHandlerOrchestratorOption {
+	return func(m *messageHandlerOrchestrator) {
+		m.userReader = userReader
+	}
+}
+
 func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	response := UserDataResponse{
 		Success: false,
@@ -40,6 +51,26 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	}
 	responseJSON, _ := json.Marshal(response)
 	return responseJSON
+}
+
+func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+
+	email := string(msg.Data())
+
+	slog.DebugContext(ctx, "email to username",
+		"email", redaction.RedactEmail(email),
+	)
+
+	user := &model.User{
+		PrimaryEmail: email,
+	}
+
+	user, err := m.userReader.SearchUser(ctx, user, constants.CriteriaTypeEmail)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
+
+	return []byte(user.Username), nil
 }
 
 // UpdateUser updates the user in the identity provider
