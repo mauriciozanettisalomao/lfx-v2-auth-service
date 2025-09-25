@@ -31,9 +31,6 @@ const (
 	// Auth0PrivateBase64KeyEnvKey is the environment variable key for the Auth0 base64 encoded private key
 	Auth0PrivateBase64KeyEnvKey = "AUTH0_PRIVATE_BASE64_KEY"
 
-	// Auth0PrivateKeySecretPathEnvKey is the environment variable key for the Auth0 private key secret file path
-	Auth0PrivateKeySecretPathEnvKey = "AUTH0_PRIVATE_KEY_SECRET_PATH"
-
 	// Auth0AudienceEnvKey is the environment variable key for the Auth0 audience
 	Auth0AudienceEnvKey = "AUTH0_AUDIENCE"
 )
