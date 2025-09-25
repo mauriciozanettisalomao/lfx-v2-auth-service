@@ -35,6 +35,12 @@ func (v NotFound) Error() string {
 	return v.error()
 }
 
+// IsNotFound checks if the error is a NotFound error.
+func IsNotFound(err error) bool {
+	var notFound NotFound
+	return errors.As(err, &notFound)
+}
+
 // NewNotFound creates a new NotFound error with the provided message.
 func NewNotFound(message string, err ...error) NotFound {
 	return NotFound{

@@ -13,6 +13,35 @@ service:
   # port is the service port
   port: 8080
 
+nats:
+  # url is the URL of the NATS server
+  url: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
+
+  ## ** IMPORTANT **
+  ## This should used for local development - it's disabled by default.
+  ## If you set the REPO_TYPE to authelia, it should be enabled -> creation: true
+  ##
+  # authelia_users_kv_bucket is the configuration for the KV bucket for storing authelia_users
+  authelia_users_kv_bucket:
+    # creation is a boolean to determine if the KV bucket should be created via the helm chart.
+    # set it to false if you want to use an existing KV bucket.
+    creation: true
+    # keep is a boolean to determine if the KV bucket should be preserved during helm uninstall
+    # set it to false if you want the bucket to be deleted when the chart is uninstalled
+    keep: true
+    # name is the name of the KV bucket for storing projects
+    name: authelia-users
+    # history is the number of history entries to keep for the KV bucket
+    history: 5
+    # storage is the storage type for the KV bucket
+    storage: file
+    # maxValueSize is the maximum size of a value in the KV bucket
+    maxValueSize: 1048576  # 1MB (sufficient for user data)
+    # maxBytes is the maximum number of bytes in the KV bucket
+    maxBytes: 52428800  # 50MB (generous for ~100 users)
+    # compression is a boolean to determine if the KV bucket should be compressed
+    compression: true
+
 # app is the configuration for the application
 app:
   # use_oidc_contextualizer is a boolean to determine if the OIDC contextualizer should be used
@@ -27,8 +56,16 @@ app:
     USER_REPOSITORY_TYPE:
       value: mock
     # Auth0 Management API configuration
-    ## Optional when using mock or autheliarepository type
+    ## Optional when using mock or authelia repository type
     AUTH0_TENANT:
       value: null
     AUTH0_DOMAIN:
       value: null
+    # Authelia configuration
+    ## Required when using authelia repository type
+    AUTHELIA_CONFIGMAP_NAME:
+      value: authelia-users
+    AUTHELIA_CONFIGMAP_NAMESPACE:
+      value: lfx
+    AUTHELIA_USERS_FILE_KEY:
+      value: users_database.yml
