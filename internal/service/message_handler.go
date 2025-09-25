@@ -24,22 +24,22 @@ type UserDataResponse struct {
 
 // messageHandlerOrchestrator orchestrates the message handling process
 type messageHandlerOrchestrator struct {
-	userWriter UserServiceWriter
-	userReader UserServiceReader
+	userWriter port.UserWriter
+	userReader port.UserReader
 }
 
 // messageHandlerOrchestratorOption defines a function type for setting options
 type messageHandlerOrchestratorOption func(*messageHandlerOrchestrator)
 
 // WithUserWriterForMessageHandler sets the user writer for the message handler orchestrator
-func WithUserWriterForMessageHandler(userWriter UserServiceWriter) messageHandlerOrchestratorOption {
+func WithUserWriterForMessageHandler(userWriter port.UserWriter) messageHandlerOrchestratorOption {
 	return func(m *messageHandlerOrchestrator) {
 		m.userWriter = userWriter
 	}
 }
 
 // WithUserReaderForMessageHandler sets the user reader for the message handler orchestrator
-func WithUserReaderForMessageHandler(userReader UserServiceReader) messageHandlerOrchestratorOption {
+func WithUserReaderForMessageHandler(userReader port.UserReader) messageHandlerOrchestratorOption {
 	return func(m *messageHandlerOrchestrator) {
 		m.userReader = userReader
 	}
@@ -95,6 +95,15 @@ func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.Tr
 	err := json.Unmarshal(msg.Data(), user)
 	if err != nil {
 		responseJSON := m.errorResponse("failed to unmarshal user data")
+		return responseJSON, nil
+	}
+
+	// Sanitize user data first
+	user.UserSanitize()
+
+	// Validate user data
+	if err := user.Validate(); err != nil {
+		responseJSON := m.errorResponse(err.Error())
 		return responseJSON, nil
 	}
 

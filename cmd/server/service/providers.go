@@ -140,10 +140,10 @@ func QueueSubscriptions(ctx context.Context) error {
 	messageHandlerService := &MessageHandlerService{
 		messageHandler: service.NewMessageHandlerOrchestrator(
 			service.WithUserWriterForMessageHandler(
-				service.NewUserWriterOrchestrator(service.WithUserWriter(newUserReaderWriter(ctx))),
+				newUserReaderWriter(ctx),
 			),
 			service.WithUserReaderForMessageHandler(
-				service.NewUserReaderOrchestrator(service.WithUserReader(newUserReaderWriter(ctx))),
+				newUserReaderWriter(ctx),
 			),
 		),
 	}
