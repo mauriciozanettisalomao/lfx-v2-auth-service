@@ -212,6 +212,11 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 		return nil, errors.NewValidation("user_id is required to get user")
 	}
 
+	// Validate configuration before making HTTP requests
+	if strings.TrimSpace(u.config.Domain) == "" {
+		return nil, errors.NewValidation("Auth0 domain configuration is missing")
+	}
+
 	apiRequest := httpclient.NewAPIRequest(
 		u.httpClient,
 		httpclient.WithMethod(http.MethodGet),
@@ -258,6 +263,11 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 	if err := u.jwtVerify(ctx, user); err != nil {
 		slog.ErrorContext(ctx, "jwt verify failed", "error", err)
 		return nil, err
+	}
+
+	// Validate configuration before making HTTP requests
+	if strings.TrimSpace(u.config.Domain) == "" {
+		return nil, errors.NewValidation("Auth0 domain configuration is missing")
 	}
 
 	// Prepare the request body for updating user metadata
