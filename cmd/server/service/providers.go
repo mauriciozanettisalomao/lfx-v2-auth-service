@@ -137,13 +137,15 @@ func QueueSubscriptions(ctx context.Context) error {
 	// Initialize NATS client first
 	natsInit(ctx)
 
+	userReaderWriter := newUserReaderWriter(ctx)
+
 	messageHandlerService := &MessageHandlerService{
 		messageHandler: service.NewMessageHandlerOrchestrator(
 			service.WithUserWriterForMessageHandler(
-				newUserReaderWriter(ctx),
+				userReaderWriter,
 			),
 			service.WithUserReaderForMessageHandler(
-				newUserReaderWriter(ctx),
+				userReaderWriter,
 			),
 		),
 	}
