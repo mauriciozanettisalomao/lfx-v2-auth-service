@@ -105,7 +105,7 @@ The service supports two lookup strategies based on the input format, providing 
 
 The service automatically determines the lookup strategy based on the input format:
 
-- **Canonical Lookup** (contains `|`): `<connection>|<provider_user_id>` - Authoritative identifier
+- **Canonical Lookup** (contains `|`): `<connection>|<provider_user_id>` - Subject identifier
 - **Search Lookup** (no `|`): `<username>` - Convenience lookup
 
 ##### Canonical Lookup Strategy (Recommended)
@@ -184,7 +184,7 @@ The service returns a structured reply with user metadata:
 ##### Examples using NATS CLI
 
 ```bash
-# Canonical lookup (authoritative identifier)
+# Canonical lookup (subject identifier)
 # Note: Use quotes to escape the pipe character in shell commands
 nats request lfx.auth-service.user_metadata.read "auth0|123456789"
 
