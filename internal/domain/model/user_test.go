@@ -592,7 +592,7 @@ func TestUser_PrepareForMetadataLookup_PreservesOtherFields(t *testing.T) {
 		Token:        "test-token",
 		PrimaryEmail: "test@example.com",
 		UserMetadata: &UserMetadata{
-			Name: stringPtr("Test User"),
+			Name: converters.StringPtr("Test User"),
 		},
 	}
 
@@ -611,9 +611,4 @@ func TestUser_PrepareForMetadataLookup_PreservesOtherFields(t *testing.T) {
 	if user.UserMetadata != originalMetadata {
 		t.Errorf("UserMetadata was modified")
 	}
-}
-
-// Helper function for creating string pointers
-func stringPtr(s string) *string {
-	return &s
 }
