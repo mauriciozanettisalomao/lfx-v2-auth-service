@@ -68,6 +68,19 @@ func (u *userWriter) GetUser(ctx context.Context, user *model.User) (*model.User
 	return user, nil
 }
 
+func (u *userWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
+	slog.InfoContext(ctx, "mock: searching user", "user", user, "criteria", criteria)
+
+	// For mock implementation, we'll search by the criteria string as a key first
+	if existingUser, exists := u.users[criteria]; exists {
+		slog.InfoContext(ctx, "mock: user found by criteria", "criteria", criteria)
+		return existingUser, nil
+	}
+
+	// If not found by criteria, fall back to GetUser behavior
+	return u.GetUser(ctx, user)
+}
+
 func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 	slog.InfoContext(ctx, "mock: updating user", "user", user)
 

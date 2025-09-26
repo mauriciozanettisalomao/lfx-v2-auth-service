@@ -6,12 +6,16 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
-// UserUpdateResponse represents the response structure for user update operations
+// UserDataResponse represents the response structure for user update operations
 type UserDataResponse struct {
 	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`
@@ -20,16 +24,24 @@ type UserDataResponse struct {
 
 // messageHandlerOrchestrator orchestrates the message handling process
 type messageHandlerOrchestrator struct {
-	userWriter UserServiceWriter
+	userWriter port.UserWriter
+	userReader port.UserReader
 }
 
 // messageHandlerOrchestratorOption defines a function type for setting options
 type messageHandlerOrchestratorOption func(*messageHandlerOrchestrator)
 
 // WithUserWriterForMessageHandler sets the user writer for the message handler orchestrator
-func WithUserWriterForMessageHandler(userWriter UserServiceWriter) messageHandlerOrchestratorOption {
+func WithUserWriterForMessageHandler(userWriter port.UserWriter) messageHandlerOrchestratorOption {
 	return func(m *messageHandlerOrchestrator) {
 		m.userWriter = userWriter
+	}
+}
+
+// WithUserReaderForMessageHandler sets the user reader for the message handler orchestrator
+func WithUserReaderForMessageHandler(userReader port.UserReader) messageHandlerOrchestratorOption {
+	return func(m *messageHandlerOrchestrator) {
+		m.userReader = userReader
 	}
 }
 
@@ -40,6 +52,36 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	}
 	responseJSON, _ := json.Marshal(response)
 	return responseJSON
+}
+
+func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+
+	if m.userReader == nil {
+		return m.errorResponse("user service unavailable"), nil
+	}
+
+	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
+	if email == "" {
+		return m.errorResponse("email is required"), nil
+	}
+
+	slog.DebugContext(ctx, "email to username",
+		"email", redaction.RedactEmail(email),
+	)
+
+	user := &model.User{
+		PrimaryEmail: email,
+	}
+
+	// SearchUser is used to find “root” user emails, not linked email
+	//
+	// Finding users by alternate emails is NOT available
+	user, err := m.userReader.SearchUser(ctx, user, constants.CriteriaTypeEmail)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
+
+	return []byte(user.Username), nil
 }
 
 // UpdateUser updates the user in the identity provider
@@ -53,6 +95,15 @@ func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.Tr
 	err := json.Unmarshal(msg.Data(), user)
 	if err != nil {
 		responseJSON := m.errorResponse("failed to unmarshal user data")
+		return responseJSON, nil
+	}
+
+	// Sanitize user data first
+	user.UserSanitize()
+
+	// Validate user data
+	if err := user.Validate(); err != nil {
+		responseJSON := m.errorResponse(err.Error())
 		return responseJSON, nil
 	}
 

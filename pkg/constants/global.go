@@ -23,4 +23,14 @@ const (
 
 	// Auth0DomainEnvKey is the environment variable key for the Auth0 domain
 	Auth0DomainEnvKey = "AUTH0_DOMAIN"
+
+	// Auth0 M2M Authentication configuration
+	// Auth0ClientIDEnvKey is the environment variable key for the Auth0 client ID
+	Auth0ClientIDEnvKey = "AUTH0_CLIENT_ID"
+
+	// Auth0PrivateBase64KeyEnvKey is the environment variable key for the Auth0 base64 encoded private key
+	Auth0PrivateBase64KeyEnvKey = "AUTH0_PRIVATE_BASE64_KEY"
+
+	// Auth0AudienceEnvKey is the environment variable key for the Auth0 audience
+	Auth0AudienceEnvKey = "AUTH0_AUDIENCE"
 )

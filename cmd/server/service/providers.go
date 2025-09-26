@@ -85,7 +85,7 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 
 	userRepositoryType := os.Getenv(constants.UserRepositoryTypeEnvKey)
 	if userRepositoryType == "" {
-		userRepositoryType = constants.UserRepositoryTypeAuth0 // default to auth0 when tenant is set
+		userRepositoryType = constants.UserRepositoryTypeMock // default to mock when not set
 	}
 
 	switch userRepositoryType {
@@ -112,7 +112,18 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 			Tenant: auth0Tenant,
 			Domain: auth0Domain,
 		}
-		return auth0.NewUserReaderWriter(httpclient.DefaultConfig(), auth0Config)
+
+		slog.DebugContext(ctx, "Auth0 client initialized with M2M token support",
+			"tenant", auth0Tenant,
+			"domain", auth0Domain,
+		)
+
+		userReaderWriter, err := auth0.NewUserReaderWriter(ctx, httpclient.DefaultConfig(), auth0Config)
+		if err != nil {
+			log.Fatalf("failed to create Auth0 user reader writer: %v", err)
+		}
+
+		return userReaderWriter
 	default:
 		log.Fatalf("unsupported user repository type: %s", userRepositoryType)
 		return nil // This will never be reached due to log.Fatalf, but satisfies the linter
@@ -126,10 +137,15 @@ func QueueSubscriptions(ctx context.Context) error {
 	// Initialize NATS client first
 	natsInit(ctx)
 
+	userReaderWriter := newUserReaderWriter(ctx)
+
 	messageHandlerService := &MessageHandlerService{
 		messageHandler: service.NewMessageHandlerOrchestrator(
 			service.WithUserWriterForMessageHandler(
-				service.NewUserWriterOrchestrator(service.WithUserWriter(newUserReaderWriter(ctx))),
+				userReaderWriter,
+			),
+			service.WithUserReaderForMessageHandler(
+				userReaderWriter,
 			),
 		),
 	}
@@ -143,6 +159,7 @@ func QueueSubscriptions(ctx context.Context) error {
 	// Start subscriptions for each subject
 	subjects := map[string]func(context.Context, port.TransportMessenger){
 		constants.UserMetadataUpdateSubject: messageHandlerService.HandleMessage,
+		constants.UserEmailToUserSubject:    messageHandlerService.HandleMessage,
 		// Add more subjects here as needed
 	}
 

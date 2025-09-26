@@ -1,6 +1,6 @@
-# LFX V2 Auth Service
+# LFX v2 Auth Service
 
-This repository contains the source code for the LFX v2 platform authentication service.
+A NATS-based authentication and user management microservice for the LFX v2 platform. This service provides an abstraction layer between applications and identity providers (Auth0 and Authelia).
 
 ## Overview
 
@@ -8,7 +8,12 @@ The LFX v2 Auth Service provides authentication and profile access in the v2 Pla
 
 The service operates as a NATS-based microservice, responding to request/reply patterns on specific subjects.
 
-## File Structure
+### Prerequisites
+- Go 1.24.5+
+- NATS server
+- Auth0 configuration (optional, defaults to mock mode)
+
+### Installation
 
 ```bash
 ├── .github/                        # Github files
@@ -37,7 +42,57 @@ The service operates as a NATS-based microservice, responding to request/reply p
 
 The LFX v2 Auth Service operates as a NATS-based microservice that responds to request/reply patterns on specific subjects. The service provides user management capabilities through NATS messaging.
 
-#### User Update Operations
+---
+
+### Email to Username Lookup
+
+To look up a username by email address, send a NATS request to the following subject:
+
+**Subject:** `lfx.auth-service.email_to_username`  
+**Pattern:** Request/Reply
+
+##### Request Payload
+
+The request payload should be a plain text email address (no JSON wrapping required):
+
+```
+user@example.com
+```
+
+##### Reply
+
+The service returns the username as plain text if the email is found:
+
+**Success Reply:**
+```
+john.doe
+```
+
+**Error Reply:**
+```json
+{
+  "success": false,
+  "error": "user not found"
+}
+```
+
+##### Example using NATS CLI
+
+```bash
+# Look up username by email
+nats request lfx.auth-service.email_to_username zephyr.stormwind@mythicaltech.io
+
+# Expected response: zephyr.stormwind
+```
+
+**Important Notes:**
+- This service searches for users by their **primary email** only
+- Linked/alternate email addresses are **not** supported for lookup
+- The service works with both Auth0 and mock repositories based on configuration
+
+---
+
+### User Update Operation
 
 To update a user profile, send a NATS request to the following subject:
 
@@ -141,14 +196,18 @@ The NATS client can be configured using environment variables:
 
 The Auth0 integration can be configured using environment variables:
 
+- `USER_REPOSITORY_TYPE`: Set to `"auth0"` to use Auth0 integration, or `"mock"` for local development
+  - **If not set, defaults to `"mock"`**
 - `AUTH0_TENANT`: Auth0 tenant name (e.g., `"linuxfoundation"`, `"linuxfoundation-staging"`, `"linuxfoundation-dev"`)
-  - **If not set, the service will automatically use mock/local behavior**
+  - **Required when using Auth0 repository type**
 - `AUTH0_DOMAIN`: Auth0 domain for Management API calls (e.g., `"sso.linuxfoundation.org"`)
   - **If not set, defaults to `${AUTH0_TENANT}.auth0.com`**
-- `USER_REPOSITORY_TYPE`: Set to `"auth0"` to use Auth0 integration, or `"mock"` for local development
-  - **Defaults to `"auth0"` when `AUTH0_TENANT` is set, `"mock"` otherwise**
-
-**Note:** When `AUTH0_DOMAIN` and `AUTH0_MANAGEMENT_TOKEN` are not set, the service will validate JWT tokens but won't make actual calls to Auth0's Management API.
+- `AUTH0_CLIENT_ID`: Auth0 Machine-to-Machine application client ID
+  - **Required when using Auth0 repository type**
+- `AUTH0_PRIVATE_BASE64_KEY`: Base64-encoded private key for Auth0 M2M authentication
+  - **Required when using Auth0 repository type**
+- `AUTH0_AUDIENCE`: Auth0 API audience/identifier for the Management API
+  - **Required when using Auth0 repository type**
 
 ## Releases
 

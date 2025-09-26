@@ -19,6 +19,7 @@ app:
   use_oidc_contextualizer: true
   # environment is the configuration for the application environment
   environment:
+    # NATS Configuration
     NATS_URL:
       value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
     # Repository type for user management
@@ -27,8 +28,16 @@ app:
     USER_REPOSITORY_TYPE:
       value: mock
     # Auth0 Management API configuration
-    ## Optional when using mock or autheliarepository type
+    ## Optional when using mock or authelia repository type
     AUTH0_TENANT:
       value: null
     AUTH0_DOMAIN:
+      value: null
+    # Auth0 M2M Authentication configuration
+    ## Required when using auth0 repository type
+    AUTH0_CLIENT_ID:
+      value: null
+    AUTH0_PRIVATE_BASE64_KEY:
+      value: null
+    AUTH0_AUDIENCE:
       value: null
