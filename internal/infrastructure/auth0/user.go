@@ -5,7 +5,6 @@ package auth0
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -253,12 +252,15 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 	// Parse the response to update the user object
 	var auth0User *model.Auth0User
 	statusCode, errCall := apiRequest.Call(ctx, &auth0User)
-	if errCall != nil && !errors.As(errCall, &errs.NotFound{}) {
+	if errCall != nil {
 		slog.ErrorContext(ctx, "failed to get user from Auth0",
 			"error", errCall,
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
+		if strings.Contains(strings.ToLower(errCall.Error()), "not found") {
+			return nil, errs.NewNotFound("user not found")
+		}
 		return nil, errs.NewUnexpected("failed to get user from Auth0", errCall)
 	}
 

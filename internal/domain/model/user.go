@@ -128,9 +128,12 @@ func (u *User) PrepareForMetadataLookup(input string) bool {
 		// Input contains "|", use as sub for canonical lookup
 		u.Sub = input
 		u.UserID = input // Auth0 uses user_id for the canonical lookup
+		u.Username = ""  // Clear username field
 		return true
 	}
 	// Input doesn't contain "|", use for search query
+	u.Sub = ""    // Clear sub field
+	u.UserID = "" // Clear user_id field
 	u.Username = input
 	return false
 }
