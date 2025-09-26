@@ -5,6 +5,7 @@ package auth0
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,13 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
-	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	errs "github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -69,18 +71,18 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	// Parse the token without verification for now (we'll add JWKS verification later if needed)
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
-		return errors.NewValidation("failed to parse JWT token: %w", err)
+		return errs.NewValidation("failed to parse JWT token: %w", err)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return errors.NewValidation("invalid token claims")
+		return errs.NewValidation("invalid token claims")
 	}
 
 	// 1. Extract user_id from 'sub' claim
 	sub, ok := claims["sub"].(string)
 	if !ok || strings.TrimSpace(sub) == "" {
-		return errors.NewValidation("missing or invalid 'sub' claim in token")
+		return errs.NewValidation("missing or invalid 'sub' claim in token")
 	}
 
 	// Assign the user_id from sub claim
@@ -91,7 +93,7 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	// 2. Check if token is expired
 	exp, okExp := claims["exp"]
 	if !okExp {
-		return errors.NewValidation("missing 'exp' claim in token")
+		return errs.NewValidation("missing 'exp' claim in token")
 	}
 	var expTime time.Time
 	switch expValue := exp.(type) {
@@ -102,27 +104,27 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	case int:
 		expTime = time.Unix(int64(expValue), 0)
 	default:
-		return errors.NewValidation("invalid 'exp' claim format")
+		return errs.NewValidation("invalid 'exp' claim format")
 	}
 	if time.Now().After(expTime) {
-		return errors.NewValidation(fmt.Sprintf("token has expired at %v", expTime))
+		return errs.NewValidation(fmt.Sprintf("token has expired at %v", expTime))
 	}
 	slog.DebugContext(ctx, "token expiration validated", "expires_at", expTime)
 
 	// 3. Check if scope contains 'update:current_user_metadata'
 	scopeClaim, okScopeClaim := claims["scope"]
 	if !okScopeClaim {
-		return errors.NewValidation("missing 'scope' claim in token")
+		return errs.NewValidation("missing 'scope' claim in token")
 	}
 	scopeString, ok := scopeClaim.(string)
 	if !ok {
-		return errors.NewValidation("invalid 'scope' claim format")
+		return errs.NewValidation("invalid 'scope' claim format")
 	}
 
 	scopes := strings.Fields(scopeString) // Split by whitespace
 	hasRequiredScope := slices.Contains(scopes, userMetadataRequiredScope)
 	if !hasRequiredScope {
-		return errors.NewValidation(fmt.Sprintf("wrong scope, got %s", scopeString))
+		return errs.NewValidation(fmt.Sprintf("wrong scope, got %s", scopeString))
 	}
 
 	slog.DebugContext(ctx, "JWT validation successful", "user_id", user.UserID)
@@ -133,36 +135,36 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 
 	endpoint, ok := criteriaEndpointMapping[criteria]
 	if !ok {
-		return nil, errors.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
+		return nil, errs.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
 	}
 
-	param := func(criteriaType string) string {
+	param := func(criteriaType string) []any {
 		switch criteriaType {
 		case constants.CriteriaTypeEmail:
 			slog.DebugContext(ctx, "searching user",
 				"criteria", criteria,
 				"email", redaction.RedactEmail(user.PrimaryEmail),
 			)
-			return url.QueryEscape(strings.ToLower(strings.TrimSpace(user.PrimaryEmail)))
+			return []any{url.QueryEscape(strings.ToLower(strings.TrimSpace(user.PrimaryEmail)))}
 		case constants.CriteriaTypeUsername:
 			slog.DebugContext(ctx, "searching user",
 				"criteria", criteria,
 				"username", redaction.Redact(user.Username),
 			)
-			return url.QueryEscape(strings.TrimSpace(user.Username))
+			return []any{url.QueryEscape(strings.TrimSpace(user.Username))}
 		}
-		return ""
+		return []any{}
 	}
 
 	if user.Token == "" {
 		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
 		if errGetToken != nil {
-			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
+			return nil, errs.NewUnexpected("failed to get M2M token", errGetToken)
 		}
 		user.Token = m2mToken
 	}
 
-	endpointWithParam := fmt.Sprintf(endpoint, param(criteria))
+	endpointWithParam := fmt.Sprintf(endpoint, param(criteria)...)
 	url := fmt.Sprintf("https://%s/api/v2/%s", u.config.Domain, endpointWithParam)
 
 	apiRequest := httpclient.NewAPIRequest(
@@ -181,26 +183,40 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 			"error", errCall,
 			"status_code", statusCode,
 		)
-		return nil, errors.NewUnexpected("failed to search user", errCall)
+		return nil, errs.NewUnexpected("failed to search user", errCall)
 	}
 
 	if len(users) == 0 {
-		return nil, errors.NewNotFound("user not found")
+		return nil, errs.NewNotFound("user not found")
 	}
 
-	for _, user := range users {
+	slog.DebugContext(ctx, "users found, checking if the user is the one with the correct identity",
+		"criteria", criteria,
+	)
+
+	for _, userResult := range users {
 		// identities.user_id:{{username}} AND identities.connection:Username-Password-Authentication
 		// It doesn't work like an AND, it works like an OR
 		// So it's necessary to check if the identity is the one we are looking for
-		for _, identity := range user.Identities {
+		for _, identity := range userResult.Identities {
 			if identity.Connection == usernameFilter {
+				// if the search is by username, we need to check if the identity is the one we are looking for
+				if criteria == constants.CriteriaTypeUsername && identity.UserID != user.Username {
+					slog.DebugContext(ctx, "user found, but it's not the correct identity",
+						"filter", usernameFilter,
+						"user_id", redaction.Redact(identity.UserID),
+					)
+					// if the connection is Password-Authentication and the user is not the one we are looking for,
+					// we need to return an error
+					return nil, errs.NewNotFound("user not found")
+				}
 				user.Username = identity.UserID
-				return user.ToUser(), nil
+				return userResult.ToUser(), nil
 			}
 		}
 	}
 
-	return nil, errors.NewNotFound("user not found by criteria")
+	return nil, errs.NewNotFound("user not found")
 
 }
 
@@ -208,14 +224,22 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 	slog.DebugContext(ctx, "getting user", "user_id", user.UserID)
 
+	if user.Token == "" {
+		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
+		if errGetToken != nil {
+			return nil, errs.NewUnexpected("failed to get M2M token", errGetToken)
+		}
+		user.Token = m2mToken
+	}
+
 	// If we don't have a user ID, we can't fetch the user
 	if user.UserID == "" {
-		return nil, errors.NewValidation("user_id is required to get user")
+		return nil, errs.NewValidation("user_id is required to get user")
 	}
 
 	// Validate configuration before making HTTP requests
 	if strings.TrimSpace(u.config.Domain) == "" {
-		return nil, errors.NewValidation("Auth0 domain configuration is missing")
+		return nil, errs.NewValidation("Auth0 domain configuration is missing")
 	}
 
 	apiRequest := httpclient.NewAPIRequest(
@@ -227,36 +251,28 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 	)
 
 	// Parse the response to update the user object
-	var auth0User struct {
-		UserID       string              `json:"user_id"`
-		Username     string              `json:"username,omitempty"`
-		Email        string              `json:"email,omitempty"`
-		UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"`
-	}
-
+	var auth0User *model.Auth0User
 	statusCode, errCall := apiRequest.Call(ctx, &auth0User)
-	if errCall != nil {
+	if errCall != nil && !errors.As(errCall, &errs.NotFound{}) {
 		slog.ErrorContext(ctx, "failed to get user from Auth0",
 			"error", errCall,
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
+		return nil, errs.NewUnexpected("failed to get user from Auth0", errCall)
 	}
 
-	// Update the user object with data from Auth0
-	if auth0User.Username != "" {
-		user.Username = auth0User.Username
-	}
-	if auth0User.Email != "" {
-		user.PrimaryEmail = auth0User.Email
-	}
-	if auth0User.UserMetadata != nil {
-		user.UserMetadata = auth0User.UserMetadata
+	if auth0User == nil {
+		slog.ErrorContext(ctx, "failed to get user from Auth0",
+			"status_code", statusCode,
+			"user_id", user.UserID,
+		)
+		return nil, errs.NewNotFound("user not found")
 	}
 
 	slog.DebugContext(ctx, "user retrieved successfully", "user_id", user.UserID)
-	return user, nil
+
+	return auth0User.ToUser(), nil
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -268,12 +284,12 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 
 	// Validate configuration before making HTTP requests
 	if strings.TrimSpace(u.config.Domain) == "" {
-		return nil, errors.NewValidation("Auth0 domain configuration is missing")
+		return nil, errs.NewValidation("Auth0 domain configuration is missing")
 	}
 
 	// Prepare the request body for updating user metadata
 	if user.UserMetadata == nil {
-		return nil, errors.NewValidation("user_metadata is required for update")
+		return nil, errs.NewValidation("user_metadata is required for update")
 	}
 	updateRequest := userUpdateRequest{UserMetadata: user.UserMetadata}
 
@@ -298,7 +314,7 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		return nil, errors.NewUnexpected("failed to update user in Auth0", errCall)
+		return nil, errs.NewUnexpected("failed to update user in Auth0", errCall)
 	}
 
 	// Create a new user object with only the user_metadata populated
