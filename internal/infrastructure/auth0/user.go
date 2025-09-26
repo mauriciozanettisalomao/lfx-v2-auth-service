@@ -16,7 +16,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
-	errs "github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 
@@ -70,18 +70,18 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	// Parse the token without verification for now (we'll add JWKS verification later if needed)
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
-		return errs.NewValidation("failed to parse JWT token: %w", err)
+		return errors.NewValidation("failed to parse JWT token: %w", err)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return errs.NewValidation("invalid token claims")
+		return errors.NewValidation("invalid token claims")
 	}
 
 	// 1. Extract user_id from 'sub' claim
 	sub, ok := claims["sub"].(string)
 	if !ok || strings.TrimSpace(sub) == "" {
-		return errs.NewValidation("missing or invalid 'sub' claim in token")
+		return errors.NewValidation("missing or invalid 'sub' claim in token")
 	}
 
 	// Assign the user_id from sub claim
@@ -92,7 +92,7 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	// 2. Check if token is expired
 	exp, okExp := claims["exp"]
 	if !okExp {
-		return errs.NewValidation("missing 'exp' claim in token")
+		return errors.NewValidation("missing 'exp' claim in token")
 	}
 	var expTime time.Time
 	switch expValue := exp.(type) {
@@ -103,27 +103,27 @@ func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) erro
 	case int:
 		expTime = time.Unix(int64(expValue), 0)
 	default:
-		return errs.NewValidation("invalid 'exp' claim format")
+		return errors.NewValidation("invalid 'exp' claim format")
 	}
 	if time.Now().After(expTime) {
-		return errs.NewValidation(fmt.Sprintf("token has expired at %v", expTime))
+		return errors.NewValidation(fmt.Sprintf("token has expired at %v", expTime))
 	}
 	slog.DebugContext(ctx, "token expiration validated", "expires_at", expTime)
 
 	// 3. Check if scope contains 'update:current_user_metadata'
 	scopeClaim, okScopeClaim := claims["scope"]
 	if !okScopeClaim {
-		return errs.NewValidation("missing 'scope' claim in token")
+		return errors.NewValidation("missing 'scope' claim in token")
 	}
 	scopeString, ok := scopeClaim.(string)
 	if !ok {
-		return errs.NewValidation("invalid 'scope' claim format")
+		return errors.NewValidation("invalid 'scope' claim format")
 	}
 
 	scopes := strings.Fields(scopeString) // Split by whitespace
 	hasRequiredScope := slices.Contains(scopes, userMetadataRequiredScope)
 	if !hasRequiredScope {
-		return errs.NewValidation(fmt.Sprintf("wrong scope, got %s", scopeString))
+		return errors.NewValidation(fmt.Sprintf("wrong scope, got %s", scopeString))
 	}
 
 	slog.DebugContext(ctx, "JWT validation successful", "user_id", user.UserID)
@@ -134,7 +134,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 
 	endpoint, ok := criteriaEndpointMapping[criteria]
 	if !ok {
-		return nil, errs.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
+		return nil, errors.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
 	}
 
 	param := func(criteriaType string) []any {
@@ -158,7 +158,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 	if user.Token == "" {
 		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
 		if errGetToken != nil {
-			return nil, errs.NewUnexpected("failed to get M2M token", errGetToken)
+			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
 		}
 		user.Token = m2mToken
 	}
@@ -182,11 +182,11 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 			"error", errCall,
 			"status_code", statusCode,
 		)
-		return nil, errs.NewUnexpected("failed to search user", errCall)
+		return nil, errors.NewUnexpected("failed to search user", errCall)
 	}
 
 	if len(users) == 0 {
-		return nil, errs.NewNotFound("user not found")
+		return nil, errors.NewNotFound("user not found")
 	}
 
 	slog.DebugContext(ctx, "users found, checking if the user is the one with the correct identity",
@@ -207,7 +207,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 					)
 					// if the connection is Password-Authentication and the user is not the one we are looking for,
 					// we need to return an error
-					return nil, errs.NewNotFound("user not found")
+					return nil, errors.NewNotFound("user not found")
 				}
 				user.Username = identity.UserID
 				return userResult.ToUser(), nil
@@ -215,7 +215,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 		}
 	}
 
-	return nil, errs.NewNotFound("user not found")
+	return nil, errors.NewNotFound("user not found")
 
 }
 
@@ -226,19 +226,19 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 	if user.Token == "" {
 		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
 		if errGetToken != nil {
-			return nil, errs.NewUnexpected("failed to get M2M token", errGetToken)
+			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
 		}
 		user.Token = m2mToken
 	}
 
 	// If we don't have a user ID, we can't fetch the user
 	if user.UserID == "" {
-		return nil, errs.NewValidation("user_id is required to get user")
+		return nil, errors.NewValidation("user_id is required to get user")
 	}
 
 	// Validate configuration before making HTTP requests
 	if strings.TrimSpace(u.config.Domain) == "" {
-		return nil, errs.NewValidation("Auth0 domain configuration is missing")
+		return nil, errors.NewValidation("Auth0 domain configuration is missing")
 	}
 
 	apiRequest := httpclient.NewAPIRequest(
@@ -259,9 +259,9 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 			"user_id", user.UserID,
 		)
 		if strings.Contains(strings.ToLower(errCall.Error()), "not found") {
-			return nil, errs.NewNotFound("user not found")
+			return nil, errors.NewNotFound("user not found")
 		}
-		return nil, errs.NewUnexpected("failed to get user from Auth0", errCall)
+		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
 	}
 
 	if auth0User == nil {
@@ -269,7 +269,7 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		return nil, errs.NewNotFound("user not found")
+		return nil, errors.NewNotFound("user not found")
 	}
 
 	slog.DebugContext(ctx, "user retrieved successfully", "user_id", user.UserID)
@@ -286,12 +286,12 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 
 	// Validate configuration before making HTTP requests
 	if strings.TrimSpace(u.config.Domain) == "" {
-		return nil, errs.NewValidation("Auth0 domain configuration is missing")
+		return nil, errors.NewValidation("Auth0 domain configuration is missing")
 	}
 
 	// Prepare the request body for updating user metadata
 	if user.UserMetadata == nil {
-		return nil, errs.NewValidation("user_metadata is required for update")
+		return nil, errors.NewValidation("user_metadata is required for update")
 	}
 	updateRequest := userUpdateRequest{UserMetadata: user.UserMetadata}
 
@@ -316,7 +316,7 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		return nil, errs.NewUnexpected("failed to update user in Auth0", errCall)
+		return nil, errors.NewUnexpected("failed to update user in Auth0", errCall)
 	}
 
 	// Create a new user object with only the user_metadata populated
