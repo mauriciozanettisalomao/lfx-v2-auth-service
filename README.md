@@ -196,14 +196,18 @@ The NATS client can be configured using environment variables:
 
 The Auth0 integration can be configured using environment variables:
 
+- `USER_REPOSITORY_TYPE`: Set to `"auth0"` to use Auth0 integration, or `"mock"` for local development
+  - **If not set, defaults to `"mock"`**
 - `AUTH0_TENANT`: Auth0 tenant name (e.g., `"linuxfoundation"`, `"linuxfoundation-staging"`, `"linuxfoundation-dev"`)
-  - **If not set, the service will automatically use mock/local behavior**
+  - **Required when using Auth0 repository type**
 - `AUTH0_DOMAIN`: Auth0 domain for Management API calls (e.g., `"sso.linuxfoundation.org"`)
   - **If not set, defaults to `${AUTH0_TENANT}.auth0.com`**
-- `USER_REPOSITORY_TYPE`: Set to `"auth0"` to use Auth0 integration, or `"mock"` for local development
-  - **Defaults to `"auth0"` when `AUTH0_TENANT` is set, `"mock"` otherwise**
-
-**Note:** When `AUTH0_DOMAIN` and `AUTH0_MANAGEMENT_TOKEN` are not set, the service will validate JWT tokens but won't make actual calls to Auth0's Management API.
+- `AUTH0_CLIENT_ID`: Auth0 Machine-to-Machine application client ID
+  - **Required when using Auth0 repository type**
+- `AUTH0_PRIVATE_BASE64_KEY`: Base64-encoded private key for Auth0 M2M authentication
+  - **Required when using Auth0 repository type**
+- `AUTH0_AUDIENCE`: Auth0 API audience/identifier for the Management API
+  - **Required when using Auth0 repository type**
 
 ## Releases
 

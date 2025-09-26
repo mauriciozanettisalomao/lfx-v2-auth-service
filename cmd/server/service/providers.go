@@ -85,7 +85,7 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 
 	userRepositoryType := os.Getenv(constants.UserRepositoryTypeEnvKey)
 	if userRepositoryType == "" {
-		userRepositoryType = constants.UserRepositoryTypeAuth0 // default to auth0 when tenant is set
+		userRepositoryType = constants.UserRepositoryTypeMock // default to mock when not set
 	}
 
 	switch userRepositoryType {
