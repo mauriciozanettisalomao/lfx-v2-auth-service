@@ -22,7 +22,7 @@ The canonical lookup is the **authoritative, standard way to identify a user**, 
 * `linkedin|789123456` — LinkedIn OAuth2 user
 
 **Auth0 Management API Call:**
-```
+```http
 GET /api/v2/users/{sub}
 ```
 
@@ -44,7 +44,7 @@ Username lookups are **convenience only** and help avoid connection collisions. 
 - `developer123`
 
 **Auth0 Management API Call:**
-```
+```http
 GET /api/v2/users?q=identities.user_id:{username} AND identities.connection:Username-Password-Authentication
 ```
 

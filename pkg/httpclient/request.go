@@ -127,6 +127,9 @@ func (a *apiRequest) Call(ctx context.Context, resp any) (int, error) {
 			"error", err,
 			"method", a.Method,
 			"description", a.Description)
+		if re, ok := err.(*RetryableError); ok {
+			return re.StatusCode, err
+		}
 		return -1, errors.NewUnexpected("API request failed", err)
 	}
 

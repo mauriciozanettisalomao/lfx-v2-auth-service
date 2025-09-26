@@ -195,11 +195,15 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 
 	for _, userResult := range users {
 		// identities.user_id:{{username}} AND identities.connection:Username-Password-Authentication
-		// It doesn't work like an AND, it works like an OR
+		// It doesn't work like an AND, it works like an IN clause
+		// (check if it contains the username and the connection, but they might not be in  the same identity)
 		// So it's necessary to check if the identity is the one we are looking for
 		for _, identity := range userResult.Identities {
 			if identity.Connection == usernameFilter {
 				// if the search is by username, we need to check if the identity is the one we are looking for
+				//
+				// At this point, we know that the user is found, but the validation is to
+				// make sure the username is from the Username-Password-Authentication connection
 				if criteria == constants.CriteriaTypeUsername && identity.UserID != user.Username {
 					slog.DebugContext(ctx, "user found, but it's not the correct identity",
 						"filter", usernameFilter,
@@ -258,7 +262,7 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		if strings.Contains(strings.ToLower(errCall.Error()), "not found") {
+		if statusCode == http.StatusNotFound {
 			return nil, errors.NewNotFound("user not found")
 		}
 		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
