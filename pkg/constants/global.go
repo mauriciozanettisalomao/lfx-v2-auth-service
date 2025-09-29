@@ -14,8 +14,27 @@ const (
 	// UserRepositoryTypeMock is the value for the mock user repository type
 	UserRepositoryTypeMock = "mock"
 
+	// UserRepositoryTypeAuthelia is the value for the Authelia user repository type
+	UserRepositoryTypeAuthelia = "authelia"
+
 	// UserRepositoryTypeAuth0 is the value for the Auth0 user repository type
 	UserRepositoryTypeAuth0 = "auth0"
+
+	// Authelia configuration
+	// AutheliaConfigMapNameEnvKey is the environment variable key for the ConfigMap name
+	AutheliaConfigMapNameEnvKey = "AUTHELIA_CONFIGMAP_NAME"
+
+	// AutheliaConfigMapNamespaceEnvKey is the environment variable key for the ConfigMap namespace
+	AutheliaConfigMapNamespaceEnvKey = "AUTHELIA_CONFIGMAP_NAMESPACE"
+
+	// AutheliaDaemonSetNameEnvKey is the environment variable key for the DaemonSet name
+	AutheliaDaemonSetNameEnvKey = "AUTHELIA_DAEMONSET_NAME"
+
+	// AutheliaSecretNameEnvKey is the environment variable key for the Secret name
+	AutheliaSecretNameEnvKey = "AUTHELIA_SECRET_NAME"
+
+	// AutheliaUsersFileKeyEnvKey is the environment variable key for the users file key in ConfigMap
+	AutheliaUsersFileKeyEnvKey = "AUTHELIA_USERS_FILE_KEY"
 
 	// Auth0 Management API configuration
 	// Auth0TenantEnvKey is the environment variable key for the Auth0 tenant
