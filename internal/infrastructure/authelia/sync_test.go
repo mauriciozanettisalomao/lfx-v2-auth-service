@@ -98,9 +98,8 @@ func TestSync_CompareUsers(t *testing.T) {
 			name: "user missing from orchestrator",
 			storage: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1", PrimaryEmail: "user1@example.com"},
-					Password: "hash1",
-					Email:    "user1@example.com",
+					User:  &model.User{Username: "user1", PrimaryEmail: "user1@example.com"},
+					Email: "user1@example.com",
 				},
 			},
 			orchestrator: map[string]*AutheliaUser{},
@@ -113,9 +112,8 @@ func TestSync_CompareUsers(t *testing.T) {
 			storage: map[string]*AutheliaUser{},
 			orchestrator: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1"},
-					Password: "hash1",
-					Email:    "user1@example.com",
+					User:  &model.User{Username: "user1"},
+					Email: "user1@example.com",
 				},
 			},
 			expected: map[string]string{
@@ -123,39 +121,17 @@ func TestSync_CompareUsers(t *testing.T) {
 			},
 		},
 		{
-			name: "password mismatch requires update",
-			storage: map[string]*AutheliaUser{
-				"user1": {
-					User:     &model.User{Username: "user1", PrimaryEmail: "user1@example.com"},
-					Password: "hash1",
-					Email:    "user1@example.com",
-				},
-			},
-			orchestrator: map[string]*AutheliaUser{
-				"user1": {
-					User:     &model.User{Username: "user1"},
-					Password: "different_hash", // Different password
-					Email:    "user1@example.com",
-				},
-			},
-			expected: map[string]string{
-				"user1": actionNeededStorageUpdate,
-			},
-		},
-		{
 			name: "email mismatch requires update",
 			storage: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1", PrimaryEmail: "new@example.com"},
-					Password: "hash1",
-					Email:    "new@example.com",
+					User:  &model.User{Username: "user1", PrimaryEmail: "new@example.com"},
+					Email: "new@example.com",
 				},
 			},
 			orchestrator: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1"},
-					Password: "hash1",
-					Email:    "old@example.com", // Different email
+					User:  &model.User{Username: "user1"},
+					Email: "old@example.com", // Different email
 				},
 			},
 			expected: map[string]string{
@@ -186,9 +162,8 @@ func TestSync_CompareUsers(t *testing.T) {
 			name: "multiple users with different actions",
 			storage: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1", PrimaryEmail: "user1@example.com"},
-					Password: "hash1",
-					Email:    "user1@example.com",
+					User:  &model.User{Username: "user1", PrimaryEmail: "user1@example.com"},
+					Email: "user1@example.com",
 				},
 				"user2": {
 					User:     &model.User{Username: "user2", PrimaryEmail: "user2@example.com"},
@@ -198,14 +173,12 @@ func TestSync_CompareUsers(t *testing.T) {
 			},
 			orchestrator: map[string]*AutheliaUser{
 				"user1": {
-					User:     &model.User{Username: "user1"},
-					Password: "hash1",
-					Email:    "user1@example.com",
+					User:  &model.User{Username: "user1"},
+					Email: "user1@example.com",
 				},
 				"user3": {
-					User:     &model.User{Username: "user3"},
-					Password: "hash3",
-					Email:    "user3@example.com",
+					User:  &model.User{Username: "user3"},
+					Email: "user3@example.com",
 				},
 			},
 			expected: map[string]string{

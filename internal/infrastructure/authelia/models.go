@@ -41,14 +41,14 @@ func (a *AutheliaUser) SetUsername(username string) {
 	if a.User == nil {
 		a.User = &model.User{}
 	}
-	a.User.Username = username
+	a.Username = username
 }
 
 // ToStorage converts AutheliaUser to AutheliaUserStorage for storage operations
 func (a *AutheliaUser) ToStorage() *AutheliaUserStorage {
 	var userMetadata *model.UserMetadata
 	if a.User != nil {
-		userMetadata = a.User.UserMetadata
+		userMetadata = a.UserMetadata
 	}
 
 	return &AutheliaUserStorage{
@@ -67,7 +67,7 @@ func (a *AutheliaUser) FromStorage(storage *AutheliaUserStorage) {
 		a.User = &model.User{}
 	}
 	a.Username = storage.Username
-	a.User.UserMetadata = storage.UserMetadata
+	a.UserMetadata = storage.UserMetadata
 	a.Email = storage.Email
 	a.DisplayName = storage.DisplayName
 	a.CreatedAt = storage.CreatedAt
