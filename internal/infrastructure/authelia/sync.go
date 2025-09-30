@@ -47,7 +47,7 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 		//
 		// Also, primary email from the storage takes precedence over the primary email from the orchestrator
 		if user.Password != orchestratorUser.Password ||
-			user.PrimaryEmail != orchestratorUser.Email {
+			user.Email != orchestratorUser.Email {
 			user.actionNeeded = actionNeededOrchestratorUpdate
 			merged[key] = user
 			continue
@@ -55,6 +55,9 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 
 		// No changes needed
 		user.actionNeeded = actionNeededNone
+		if merged[key] != nil && merged[key].actionNeeded != "" {
+			user.actionNeeded = merged[key].actionNeeded
+		}
 		merged[key] = user
 	}
 
@@ -69,6 +72,9 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 		}
 		// differences are already handled above
 		user.actionNeeded = actionNeededNone
+		if merged[key] != nil && merged[key].actionNeeded != "" {
+			user.actionNeeded = merged[key].actionNeeded
+		}
 		merged[key] = user
 	}
 
@@ -95,6 +101,7 @@ func (s *sync) loadUsers(ctx context.Context, storage internalStorageReaderWrite
 			userOrchestratorMap, errConfigMap := orchestrator.LoadUsersOrigin(ctx)
 			if errConfigMap != nil {
 				slog.ErrorContext(ctx, "failed to load users from ConfigMap", "error", errConfigMap)
+				return errConfigMap
 			}
 			userAutheliaOrchestratorMap := make(map[string]*AutheliaUser)
 			for _, users := range userOrchestratorMap {
