@@ -132,7 +132,7 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 		// Load Authelia configuration from environment variables
 		configMapName := os.Getenv(constants.AutheliaConfigMapNameEnvKey)
 		if configMapName == "" {
-			configMapName = "lfx-platform-authelia"
+			configMapName = "authelia-users"
 		}
 		configMapNamespace := os.Getenv(constants.AutheliaConfigMapNamespaceEnvKey)
 		if configMapNamespace == "" {
@@ -149,17 +149,11 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 			secretName = "authelia-users"
 		}
 
-		usersFileKey := os.Getenv(constants.AutheliaUsersFileKeyEnvKey)
-		if usersFileKey == "" {
-			usersFileKey = "users_database.yml"
-		}
-
 		config := map[string]string{
-			"name":            configMapName,
+			"configmap-name":  configMapName,
 			"namespace":       configMapNamespace,
-			"daemon_set_name": daemonSetName,
-			"secret_name":     secretName,
-			"users_file_key":  usersFileKey,
+			"daemon-set-name": daemonSetName,
+			"secret-name":     secretName,
 		}
 
 		// Create Authelia user repository with NATS client for storage

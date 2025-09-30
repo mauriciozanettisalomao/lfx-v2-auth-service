@@ -8,6 +8,6 @@ import "context"
 // Orchestrator defines the behavior of the orchestrator which is responsible
 // for syncing users within the environment
 type UserOrchestrator interface {
-	Get(context.Context, func() (any, error)) (any, error)
-	Update(context.Context, func() error) error
+	Get(ctx context.Context, kind string, key any) (any, error)
+	Update(ctx context.Context, kind string, data ...any) error
 }

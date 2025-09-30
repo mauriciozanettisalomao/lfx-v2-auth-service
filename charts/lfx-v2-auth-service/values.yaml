@@ -82,5 +82,3 @@ app:
       value: lfx-platform-authelia
     AUTHELIA_SECRET_NAME:
       value: authelia-users
-    AUTHELIA_USERS_FILE_KEY:
-      value: users_database.yml

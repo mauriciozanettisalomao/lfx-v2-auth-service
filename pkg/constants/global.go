@@ -33,9 +33,6 @@ const (
 	// AutheliaSecretNameEnvKey is the environment variable key for the Secret name
 	AutheliaSecretNameEnvKey = "AUTHELIA_SECRET_NAME"
 
-	// AutheliaUsersFileKeyEnvKey is the environment variable key for the users file key in ConfigMap
-	AutheliaUsersFileKeyEnvKey = "AUTHELIA_USERS_FILE_KEY"
-
 	// Auth0 Management API configuration
 	// Auth0TenantEnvKey is the environment variable key for the Auth0 tenant
 	Auth0TenantEnvKey = "AUTH0_TENANT"

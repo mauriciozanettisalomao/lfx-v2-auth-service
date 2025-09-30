@@ -7,8 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
+	"time"
 
-	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
@@ -16,9 +17,9 @@ import (
 )
 
 type internalStorageReaderWriter interface {
-	GetUser(ctx context.Context, user *model.User) (any, error)
-	SearchUser(ctx context.Context, user *model.User, criteria string) (any, error)
-	UpdateUser(ctx context.Context, user *model.User) (any, error)
+	GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error)
+	ListUsers(ctx context.Context) (map[string]*AutheliaUser, error)
+	SetUser(ctx context.Context, user *AutheliaUser) (any, error)
 }
 
 // natsUserStorage implements UserStorage using NATS KV store
@@ -27,7 +28,7 @@ type natsUserStorage struct {
 	kvStore    jetstream.KeyValue
 }
 
-func (n *natsUserStorage) GetUser(ctx context.Context, user *model.User) (any, error) {
+func (n *natsUserStorage) GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error) {
 
 	if user == nil || user.Username == "" {
 		return nil, errors.NewUnexpected("user is required")
@@ -41,20 +42,62 @@ func (n *natsUserStorage) GetUser(ctx context.Context, user *model.User) (any, e
 		return nil, errors.NewUnexpected("failed to get user from NATS KV", err)
 	}
 
-	var autheliaUser AutheliaUser
-	if err := json.Unmarshal(entry.Value(), &autheliaUser); err != nil {
+	var storageUser AutheliaUserStorage
+	if err := json.Unmarshal(entry.Value(), &storageUser); err != nil {
 		return nil, errors.NewUnexpected("failed to unmarshal user data", err)
 	}
+
+	// Convert storage format back to AutheliaUser
+	var autheliaUser AutheliaUser
+	autheliaUser.FromStorage(&storageUser)
 
 	return &autheliaUser, nil
 }
 
-func (n *natsUserStorage) SearchUser(ctx context.Context, user *model.User, criteria string) (any, error) {
-	return nil, errors.NewUnexpected("not implemented")
+func (n *natsUserStorage) ListUsers(ctx context.Context) (map[string]*AutheliaUser, error) {
+	users := make(map[string]*AutheliaUser)
+
+	// Get all keys from the KV store
+	keys, err := n.kvStore.Keys(ctx)
+	if err != nil && !strings.Contains(err.Error(), "no keys found") {
+		return nil, errors.NewUnexpected("failed to list keys from NATS KV", err)
+	}
+
+	// Retrieve each user
+	for _, key := range keys {
+		autheliaUser := &AutheliaUser{}
+		autheliaUser.SetUsername(key)
+		user, err := n.GetUser(ctx, autheliaUser)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to get user during list operation",
+				"username", key, "error", err)
+			continue
+		}
+		users[key] = user
+	}
+
+	return users, nil
 }
 
-func (n *natsUserStorage) UpdateUser(ctx context.Context, user *model.User) (any, error) {
-	return nil, errors.NewUnexpected("not implemented")
+func (n *natsUserStorage) SetUser(ctx context.Context, user *AutheliaUser) (any, error) {
+
+	// Update timestamp
+	user.UpdatedAt = time.Now()
+
+	// If this is a new user (no CreatedAt), set it
+	if user.CreatedAt.IsZero() {
+		user.CreatedAt = time.Now()
+	}
+
+	// Convert to storage format (excludes sensitive fields)
+	storageUser := user.ToStorage()
+
+	data, err := json.Marshal(storageUser)
+	if err != nil {
+		return nil, errors.NewUnexpected("failed to marshal user data", err)
+	}
+
+	return n.kvStore.Put(ctx, user.Username, data)
 }
 
 // newNATSUserStorage creates a new NATS-based user storage

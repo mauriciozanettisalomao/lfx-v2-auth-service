@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,15 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+)
+
+const (
+	// KindConfigMap is the kind of the ConfigMap
+	KindConfigMap = "configmap"
+	// KindSecret is the kind of the Secret
+	KindSecret = "secret"
+	// KindDaemonSet is the kind of the DaemonSet
+	KindDaemonSet = "daemonSet"
 )
 
 // K8sOrchestrator is a wrapper around the Kubernetes client
@@ -53,8 +63,14 @@ func (k *K8sOrchestrator) ConfigMap(ctx context.Context, key string) (any, error
 	return data, nil
 }
 
-func (k *K8sOrchestrator) Get(ctx context.Context, fn func() (any, error)) (any, error) {
-	return fn()
+func (k *K8sOrchestrator) Get(ctx context.Context, kind string, key any) (any, error) {
+
+	switch kind {
+	case KindConfigMap:
+		return k.ConfigMap(ctx, key.(string))
+	default:
+		return nil, errors.NewUnexpected("unsupported kind")
+	}
 }
 
 // RestartDaemonSet restarts the DaemonSet
@@ -158,8 +174,56 @@ func (k *K8sOrchestrator) UpdateConfigMap(ctx context.Context, key string, yamlD
 	return nil
 }
 
-func (k *K8sOrchestrator) Update(ctx context.Context, fn func() error) error {
-	return fn()
+func (k *K8sOrchestrator) Update(ctx context.Context, kind string, data ...any) error {
+
+	switch kind {
+	case KindConfigMap:
+
+		for _, d := range data {
+			if d, ok := d.(map[string][]byte); ok {
+				for key, value := range d {
+
+					slog.DebugContext(ctx, "updating ConfigMap",
+						"name", k.configmapName,
+						"key", key,
+					)
+
+					errUpdate := k.UpdateConfigMap(ctx, key, value)
+					if errUpdate != nil {
+						return errUpdate
+					}
+				}
+			}
+		}
+
+	case KindSecret:
+
+		for _, d := range data {
+			if d, ok := d.(map[string][]byte); ok {
+
+				slog.DebugContext(ctx, "updating Secrets",
+					"name", k.secretName,
+				)
+
+				errUpdate := k.UpdateSecrets(ctx, d)
+				if errUpdate != nil {
+					return errUpdate
+				}
+
+			}
+		}
+
+	case KindDaemonSet:
+		errRestart := k.RestartDaemonSet(ctx)
+		if errRestart != nil {
+			return errRestart
+		}
+
+	default:
+		return errors.NewUnexpected("unsupported kind")
+	}
+
+	return nil
 }
 
 func (k *K8sOrchestrator) client(ctx context.Context) error {
@@ -198,31 +262,31 @@ func (k *K8sOrchestrator) client(ctx context.Context) error {
 }
 
 // NewK8sOrchestrator creates a new k8s orchestrator with auto-configured Kubernetes client
-func NewK8sOrchestrator(ctx context.Context, config map[string]string) (*K8sOrchestrator, error) {
+func NewK8sOrchestrator(ctx context.Context, config map[string]string) (port.UserOrchestrator, error) {
 
-	validate := func(input string) (string, error) {
+	validate := func(attribute, input string) (string, error) {
 		if input == "" {
-			return "", errors.NewUnexpected("configmap name is required")
+			return "", errors.NewUnexpected(fmt.Sprintf("missing required configuration value: %s", attribute))
 		}
 		return input, nil
 	}
 
-	configmapName, err := validate(config["name"])
+	configmapName, err := validate("configmap-name", config["configmap-name"])
 	if err != nil {
 		return nil, err
 	}
 
-	namespace, err := validate(config["namespace"])
+	namespace, err := validate("namespace", config["namespace"])
 	if err != nil {
 		return nil, err
 	}
 
-	daemonSetName, err := validate(config["daemon-set-name"])
+	daemonSetName, err := validate("daemon-set-name", config["daemon-set-name"])
 	if err != nil {
 		return nil, err
 	}
 
-	secretName, err := validate(config["secret-name"])
+	secretName, err := validate("secret-name", config["secret-name"])
 	if err != nil {
 		return nil, err
 	}

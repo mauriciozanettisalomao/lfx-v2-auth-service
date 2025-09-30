@@ -5,9 +5,12 @@ package authelia
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/k8s"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/stretchr/testify/assert/yaml"
 )
 
 // UserOrchestrator defines the behavior of the orchestrator which is responsible
@@ -15,7 +18,7 @@ import (
 //
 // They are required only in the Authelia context
 type internalOrchestrator interface {
-	LoadUsersOrigin(ctx context.Context) (map[string]*any, error)
+	LoadUsersOrigin(ctx context.Context) (map[string]any, error)
 	UpdateOrigin(ctx context.Context, yamlData []byte) error
 	RestartOrigin(ctx context.Context) error
 	UpdateSecrets(ctx context.Context, secretData map[string][]byte) error
@@ -23,46 +26,66 @@ type internalOrchestrator interface {
 
 type k8sOrchestrator struct {
 	config       map[string]string
-	orchestrator *k8s.K8sOrchestrator
+	orchestrator port.UserOrchestrator
 }
 
-func (k *k8sOrchestrator) LoadUsersOrigin(ctx context.Context) (map[string]*any, error) {
+func (k *k8sOrchestrator) LoadUsersOrigin(ctx context.Context) (map[string]any, error) {
 
-	usersFileKey := k.config["users_file_key"]
-	if usersFileKey == "" {
-		return nil, errors.NewUnexpected("users file key is required")
-	}
-
-	usersFile, errGetUsersFile := k.orchestrator.Get(ctx, func() (any, error) {
-		return k.orchestrator.ConfigMap(ctx, usersFileKey)
-	})
+	usersFile, errGetUsersFile := k.orchestrator.Get(ctx, k8s.KindConfigMap, "users_database.yml")
 	if errGetUsersFile != nil {
 		return nil, errGetUsersFile
 	}
-
-	if data, ok := usersFile.(map[string]*any); !ok || data == nil {
-		return data, nil
+	userFileStr, ok := usersFile.(string)
+	if !ok {
+		return nil, errors.NewUnexpected("invalid users file format")
 	}
 
-	return nil, errors.NewUnexpected("invalid data type")
+	var users map[string]any
+	if err := yaml.Unmarshal([]byte(userFileStr), &users); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal users file: %w", err)
+	}
+
+	return users, nil
 
 }
 
 func (k *k8sOrchestrator) UpdateOrigin(ctx context.Context, yamlData []byte) error {
+
+	errUpdate := k.orchestrator.Update(ctx, k8s.KindConfigMap, map[string][]byte{
+		"users_database.yml": yamlData,
+	})
+	if errUpdate != nil {
+		return errUpdate
+	}
+
 	return nil
 }
 
 func (k *k8sOrchestrator) RestartOrigin(ctx context.Context) error {
+
+	errRestart := k.orchestrator.Update(ctx, k8s.KindDaemonSet)
+	if errRestart != nil {
+		return errRestart
+	}
+
 	return nil
 }
 
 func (k *k8sOrchestrator) UpdateSecrets(ctx context.Context, secretData map[string][]byte) error {
+
+	errUpdate := k.orchestrator.Update(ctx, k8s.KindSecret, secretData)
+	if errUpdate != nil {
+		return errUpdate
+	}
+
 	return nil
 }
 
 func newK8sUserOrchestrator(ctx context.Context, config map[string]string) (internalOrchestrator, error) {
 
-	k := &k8sOrchestrator{}
+	k := &k8sOrchestrator{
+		config: config,
+	}
 
 	orchestrator, errNewK8sOrchestrator := k8s.NewK8sOrchestrator(ctx, config)
 	if errNewK8sOrchestrator != nil {
