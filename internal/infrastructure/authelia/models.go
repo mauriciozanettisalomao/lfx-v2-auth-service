@@ -89,7 +89,7 @@ func (a *AutheliaUser) ToAutheliaYAML() AutheliaUserYAML {
 	return AutheliaUserYAML{
 		DisplayName: a.DisplayName,
 		Password:    a.Password,
-		Email:       a.PrimaryEmail,
+		Email:       a.Email,
 	}
 }
 

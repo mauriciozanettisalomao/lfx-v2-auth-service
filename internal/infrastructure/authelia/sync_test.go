@@ -139,7 +139,7 @@ func TestSync_CompareUsers(t *testing.T) {
 				},
 			},
 			expected: map[string]string{
-				"user1": actionNeededOrchestratorUpdate,
+				"user1": actionNeededStorageUpdate,
 			},
 		},
 		{
@@ -430,9 +430,9 @@ func TestSync_SyncUsers(t *testing.T) {
 					},
 				},
 			},
-			expectUpdateOrigin:  true,
-			expectUpdateSecrets: true,
-			expectRestart:       true,
+			expectUpdateOrigin:  false,
+			expectUpdateSecrets: false,
+			expectRestart:       false,
 			expectError:         false,
 		},
 		{

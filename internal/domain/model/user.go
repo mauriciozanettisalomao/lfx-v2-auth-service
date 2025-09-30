@@ -119,6 +119,11 @@ func (um *UserMetadata) userMetadataSanitize() {
 
 // Patch updates the UserMetadata with the update values only if the update values are not nil
 func (a *UserMetadata) Patch(update *UserMetadata) bool {
+
+	if update == nil {
+		return false
+	}
+
 	updated := false
 
 	if update.Picture != nil {

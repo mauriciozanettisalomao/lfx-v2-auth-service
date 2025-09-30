@@ -19,6 +19,7 @@ const (
 	actionNeededOrchestratorCreation = "orchestrator_creation"
 	actionNeededOrchestratorUpdate   = "orchestrator_update"
 	actionNeededStorageCreation      = "storage_creation"
+	actionNeededStorageUpdate        = "storage_update"
 	actionNeededNone                 = "none"
 )
 
@@ -42,12 +43,8 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 			continue
 		}
 
-		// If the record exists but has different password or primary email,
-		// we will need to recreate the configmap and restart the daemonset
-		//
-		// Also, primary email from the storage takes precedence over the primary email from the orchestrator
-		if user.Password != orchestratorUser.Password ||
-			user.Email != orchestratorUser.Email {
+		// Email from the storage takes precedence over the primary email from the orchestrator
+		if user.Email != orchestratorUser.Email {
 			user.actionNeeded = actionNeededOrchestratorUpdate
 			merged[key] = user
 			continue
@@ -64,12 +61,20 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 	// Add users from orchestrator if not present in storage
 	for key, user := range orchestrator {
 		user.SetUsername(key)
-		_, exists := merged[key]
+		storageUser, exists := storage[key]
 		if !exists {
 			user.actionNeeded = actionNeededStorageCreation
 			merged[key] = user
 			continue
 		}
+
+		// Password from the storage takes precedence over the password from the orchestrator
+		if user.Password != storageUser.Password {
+			user.actionNeeded = actionNeededStorageUpdate
+			merged[key] = user
+			continue
+		}
+
 		// differences are already handled above
 		user.actionNeeded = actionNeededNone
 		if merged[key] != nil && merged[key].actionNeeded != "" {

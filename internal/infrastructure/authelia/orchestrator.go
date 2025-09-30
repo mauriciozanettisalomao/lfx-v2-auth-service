@@ -10,7 +10,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/k8s"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
-	"github.com/stretchr/testify/assert/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 // UserOrchestrator defines the behavior of the orchestrator which is responsible
