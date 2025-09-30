@@ -6,13 +6,14 @@ package authelia
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
-	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	errs "github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -31,20 +32,20 @@ type natsUserStorage struct {
 func (n *natsUserStorage) GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error) {
 
 	if user == nil || user.Username == "" {
-		return nil, errors.NewUnexpected("user is required")
+		return nil, errs.NewUnexpected("user is required")
 	}
 
 	entry, err := n.kvStore.Get(ctx, user.Username)
 	if err != nil {
-		if err == jetstream.ErrKeyNotFound {
-			return nil, errors.NewNotFound("user not found")
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			return nil, errs.NewNotFound("user not found")
 		}
-		return nil, errors.NewUnexpected("failed to get user from NATS KV", err)
+		return nil, errs.NewUnexpected("failed to get user from NATS KV", err)
 	}
 
 	var storageUser AutheliaUserStorage
 	if err := json.Unmarshal(entry.Value(), &storageUser); err != nil {
-		return nil, errors.NewUnexpected("failed to unmarshal user data", err)
+		return nil, errs.NewUnexpected("failed to unmarshal user data", err)
 	}
 
 	// Convert storage format back to AutheliaUser
@@ -60,7 +61,7 @@ func (n *natsUserStorage) ListUsers(ctx context.Context) (map[string]*AutheliaUs
 	// Get all keys from the KV store
 	keys, err := n.kvStore.Keys(ctx)
 	if err != nil && !strings.Contains(err.Error(), "no keys found") {
-		return nil, errors.NewUnexpected("failed to list keys from NATS KV", err)
+		return nil, errs.NewUnexpected("failed to list keys from NATS KV", err)
 	}
 
 	// Retrieve each user
@@ -94,7 +95,7 @@ func (n *natsUserStorage) SetUser(ctx context.Context, user *AutheliaUser) (any,
 
 	data, err := json.Marshal(storageUser)
 	if err != nil {
-		return nil, errors.NewUnexpected("failed to marshal user data", err)
+		return nil, errs.NewUnexpected("failed to marshal user data", err)
 	}
 
 	return n.kvStore.Put(ctx, user.Username, data)
@@ -105,7 +106,7 @@ func newNATSUserStorage(ctx context.Context, natsClient *nats.NATSClient) (inter
 	// Get the KV store for authelia users
 	kvStore, exists := natsClient.GetKVStore(constants.KVBucketNameAutheliaUsers)
 	if !exists {
-		return nil, errors.NewUnexpected("authelia users KV bucket not found in NATS client")
+		return nil, errs.NewUnexpected("authelia users KV bucket not found in NATS client")
 	}
 
 	slog.DebugContext(ctx, "created NATS user storage", "kvStore", kvStore)

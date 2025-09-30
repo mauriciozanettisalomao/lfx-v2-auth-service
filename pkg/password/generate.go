@@ -1,14 +1,23 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 package password
 
 import (
 	"crypto/rand"
 	"math/big"
 
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // AlphaNum generates a random alphanumeric string of the specified length
 func AlphaNum(length int) (string, error) {
+
+	if length <= 0 {
+		return "", errors.NewValidation("length must be positive")
+	}
+
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
 
@@ -25,7 +34,7 @@ func AlphaNum(length int) (string, error) {
 
 // GeneratePasswordPair generates a random password and returns both plain text and bcrypt hash
 func GeneratePasswordPair(length int) (plainPassword, bcryptHash string, err error) {
-	// Generate random 20-character password
+	// Generate random password of specified length
 	plainPasswordGenerated, errAlphaNum := AlphaNum(length)
 	if errAlphaNum != nil {
 		return "", "", errAlphaNum

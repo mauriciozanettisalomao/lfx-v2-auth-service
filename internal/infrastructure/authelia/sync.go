@@ -61,16 +61,9 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 	// Add users from orchestrator if not present in storage
 	for key, user := range orchestrator {
 		user.SetUsername(key)
-		storageUser, exists := storage[key]
+		_, exists := storage[key]
 		if !exists {
 			user.actionNeeded = actionNeededStorageCreation
-			merged[key] = user
-			continue
-		}
-
-		// Password from the storage takes precedence over the password from the orchestrator
-		if user.Password != storageUser.Password {
-			user.actionNeeded = actionNeededStorageUpdate
 			merged[key] = user
 			continue
 		}
@@ -170,6 +163,7 @@ func (s *sync) syncUsers(ctx context.Context, storage internalStorageReaderWrite
 			_, errUpdate := storage.SetUser(ctx, user)
 			if errUpdate != nil {
 				slog.ErrorContext(ctx, "failed to update user in storage", "error", errUpdate)
+				return errors.NewUnexpected("failed to update user in storage", errUpdate)
 			}
 		case actionNeededOrchestratorCreation, actionNeededOrchestratorUpdate:
 
@@ -178,6 +172,7 @@ func (s *sync) syncUsers(ctx context.Context, storage internalStorageReaderWrite
 			plainPassword, bcryptHash, errGeneratePasswordPair := password.GeneratePasswordPair(20)
 			if errGeneratePasswordPair != nil {
 				slog.ErrorContext(ctx, "failed to generate password pair", "error", errGeneratePasswordPair)
+				return errors.NewUnexpected("failed to generate password pair", errGeneratePasswordPair)
 			}
 			user.Password = bcryptHash
 
@@ -187,6 +182,7 @@ func (s *sync) syncUsers(ctx context.Context, storage internalStorageReaderWrite
 			_, errUpdate := storage.SetUser(ctx, user)
 			if errUpdate != nil {
 				slog.ErrorContext(ctx, "failed to update user in storage", "error", errUpdate)
+				return errors.NewUnexpected("failed to update user in storage", errUpdate)
 			}
 
 			updateOrchestratorOrigin = true
@@ -200,10 +196,10 @@ func (s *sync) syncUsers(ctx context.Context, storage internalStorageReaderWrite
 
 		var buf strings.Builder
 		encoder := yaml.NewEncoder(&buf)
+		defer encoder.Close()
 		if err := encoder.Encode(autheliaFormat); err != nil {
 			return errors.NewUnexpected("failed to marshal YAML", err)
 		}
-		encoder.Close()
 
 		errUpdate := orchestrator.UpdateOrigin(ctx, []byte(buf.String()))
 		if errUpdate != nil {

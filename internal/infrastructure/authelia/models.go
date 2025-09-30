@@ -30,7 +30,6 @@ type AutheliaUser struct {
 type AutheliaUserStorage struct {
 	Username     string              `json:"username"`
 	Email        string              `json:"email"`                   // email for Authelia
-	Password     string              `json:"password"`                // bcrypt hash for Authelia
 	DisplayName  string              `json:"displayname"`             // display name for Authelia
 	UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"` // user metadata from domain model
 	CreatedAt    time.Time           `json:"created_at"`              // creation timestamp
@@ -55,7 +54,6 @@ func (a *AutheliaUser) ToStorage() *AutheliaUserStorage {
 	return &AutheliaUserStorage{
 		Username:     a.Username,
 		Email:        a.Email,
-		Password:     a.Password,
 		DisplayName:  a.DisplayName,
 		UserMetadata: userMetadata,
 		CreatedAt:    a.CreatedAt,
@@ -71,7 +69,6 @@ func (a *AutheliaUser) FromStorage(storage *AutheliaUserStorage) {
 	a.Username = storage.Username
 	a.User.UserMetadata = storage.UserMetadata
 	a.Email = storage.Email
-	a.Password = storage.Password
 	a.DisplayName = storage.DisplayName
 	a.CreatedAt = storage.CreatedAt
 	a.UpdatedAt = storage.UpdatedAt
