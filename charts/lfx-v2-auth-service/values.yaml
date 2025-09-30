@@ -42,6 +42,20 @@ nats:
     # compression is a boolean to determine if the KV bucket should be compressed
     compression: true
 
+# serviceAccount is the configuration for the Kubernetes service account
+## This will be used only if the USER_REPOSITORY_TYPE is authelia
+serviceAccount:
+  # create specifies whether a service account should be created
+  create: true
+  # name is the name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  # annotations to add to the service account
+  annotations: {}
+  # automountServiceAccountToken is a boolean to determine if the service account token should be automatically mounted
+  automountServiceAccountToken: true
+
+
 # app is the configuration for the application
 app:
   # use_oidc_contextualizer is a boolean to determine if the OIDC contextualizer should be used
@@ -75,7 +89,7 @@ app:
     # Authelia configuration
     ## Required when using authelia repository type
     AUTHELIA_CONFIGMAP_NAME:
-      value: lfx-platform-authelia
+      value: authelia-users
     AUTHELIA_CONFIGMAP_NAMESPACE:
       value: lfx
     AUTHELIA_DAEMONSET_NAME:

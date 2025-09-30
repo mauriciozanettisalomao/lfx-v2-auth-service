@@ -1,7 +1,7 @@
 # Copyright The Linux Foundation and each contributor to LFX.
 # SPDX-License-Identifier: MIT
 ---
-{{- if .Values.nats.authelia_users_kv_bucket.creation }}
+{{- if and .Values.nats.authelia_users_kv_bucket.creation (eq .Values.app.environment.USER_REPOSITORY_TYPE.value "authelia") }}
 apiVersion: jetstream.nats.io/v1beta2
 kind: KeyValue
 metadata:

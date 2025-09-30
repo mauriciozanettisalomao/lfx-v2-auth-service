@@ -15,6 +15,13 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+const (
+	actionNeededOrchestratorCreation = "orchestrator_creation"
+	actionNeededOrchestratorUpdate   = "orchestrator_update"
+	actionNeededStorageCreation      = "storage_creation"
+	actionNeededNone                 = "none"
+)
+
 type sync struct {
 	usersStorageMap     map[string]*AutheliaUser
 	userOrchestratorMap map[string]*AutheliaUser
@@ -47,6 +54,7 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 		}
 
 		// No changes needed
+		user.actionNeeded = actionNeededNone
 		merged[key] = user
 	}
 
@@ -60,6 +68,7 @@ func (s *sync) compareUsers(storage, orchestrator map[string]*AutheliaUser) map[
 			continue
 		}
 		// differences are already handled above
+		user.actionNeeded = actionNeededNone
 		merged[key] = user
 	}
 

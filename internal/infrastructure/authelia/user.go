@@ -13,12 +13,6 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 )
 
-const (
-	actionNeededOrchestratorCreation = "orchestrator_creation"
-	actionNeededOrchestratorUpdate   = "orchestrator_update"
-	actionNeededStorageCreation      = "storage_creation"
-)
-
 // userWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
 type userWriter struct {
 	sync         *sync
