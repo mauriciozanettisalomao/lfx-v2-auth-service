@@ -55,7 +55,7 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	return responseJSON
 }
 
-// searchByEmail converts an email and returns a user
+// searchByEmail normalizes the email (lowercases and trims whitespace) and returns the matching user or an error
 func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, msg port.TransportMessenger) (*model.User, error) {
 	if m.userReader == nil {
 		return nil, errors.NewUnexpected("user service unavailable")
