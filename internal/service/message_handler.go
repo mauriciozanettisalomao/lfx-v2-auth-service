@@ -6,7 +6,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
-	structs "github.com/linuxfoundation/lfx-v2-auth-service/pkg/struct"
 )
 
 // UserDataResponse represents the response structure for user update operations
@@ -57,22 +55,19 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	return responseJSON
 }
 
-// emailToAttribute converts an email to an attribute of a user
-// it's a generic function that can be used to convert an email to an attribute of a user
-// the attribute is specified by the attribute parameter
-func (m *messageHandlerOrchestrator) emailToAttribute(ctx context.Context, msg port.TransportMessenger, attribute string) ([]byte, error) {
+// searchByEmail converts an email and returns a user
+func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, msg port.TransportMessenger) (*model.User, error) {
 	if m.userReader == nil {
-		return m.errorResponse("user service unavailable"), nil
+		return nil, errors.NewUnexpected("user service unavailable")
 	}
 
 	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
 	if email == "" {
-		return m.errorResponse("email is required"), nil
+		return nil, errors.NewUnexpected("email is required")
 	}
 
-	slog.DebugContext(ctx, "email to attribute",
+	slog.DebugContext(ctx, "search by email",
 		"email", redaction.RedactEmail(email),
-		"attribute", attribute,
 	)
 
 	user := &model.User{
@@ -84,37 +79,29 @@ func (m *messageHandlerOrchestrator) emailToAttribute(ctx context.Context, msg p
 	// Finding users by alternate emails is NOT available
 	user, err := m.userReader.SearchUser(ctx, user, constants.CriteriaTypeEmail)
 	if err != nil {
-		return m.errorResponse(err.Error()), nil
+		return nil, err
 	}
 
-	value, ok := structs.FieldByTag(user, "json", attribute)
-	if !ok {
-		slog.ErrorContext(ctx, "attribute not found",
-			"attribute", attribute,
-		)
-		return nil, errors.NewUnexpected(fmt.Sprintf("attribute %s not found", attribute))
-	}
-
-	strValue, ok := value.(string)
-	if !ok {
-		slog.ErrorContext(ctx, "attribute is not a string",
-			"attribute", attribute,
-		)
-		return nil, errors.NewUnexpected(fmt.Sprintf("unexpected attribute type for %s - type %T", attribute, value))
-	}
-
-	return []byte(strValue), nil
+	return user, nil
 
 }
 
 // EmailToUsername converts an email to a username
 func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
-	return m.emailToAttribute(ctx, msg, "username")
+	user, err := m.searchByEmail(ctx, msg)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
+	return []byte(user.Username), nil
 }
 
 // EmailToSub converts an email to a sub
 func (m *messageHandlerOrchestrator) EmailToSub(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
-	return m.emailToAttribute(ctx, msg, "user_id")
+	user, err := m.searchByEmail(ctx, msg)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
+	return []byte(user.UserID), nil
 }
 
 // GetUserMetadata retrieves user metadata based on the input strategy
