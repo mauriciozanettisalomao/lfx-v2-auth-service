@@ -6,13 +6,16 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
+	structs "github.com/linuxfoundation/lfx-v2-auth-service/pkg/struct"
 )
 
 // UserDataResponse represents the response structure for user update operations
@@ -54,8 +57,10 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	return responseJSON
 }
 
-func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
-
+// emailToAttribute converts an email to an attribute of a user
+// it's a generic function that can be used to convert an email to an attribute of a user
+// the attribute is specified by the attribute parameter
+func (m *messageHandlerOrchestrator) emailToAttribute(ctx context.Context, msg port.TransportMessenger, attribute string) ([]byte, error) {
 	if m.userReader == nil {
 		return m.errorResponse("user service unavailable"), nil
 	}
@@ -65,8 +70,9 @@ func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg po
 		return m.errorResponse("email is required"), nil
 	}
 
-	slog.DebugContext(ctx, "email to username",
+	slog.DebugContext(ctx, "email to attribute",
 		"email", redaction.RedactEmail(email),
+		"attribute", attribute,
 	)
 
 	user := &model.User{
@@ -81,7 +87,34 @@ func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg po
 		return m.errorResponse(err.Error()), nil
 	}
 
-	return []byte(user.Username), nil
+	value, ok := structs.FieldByTag(user, "json", attribute)
+	if !ok {
+		slog.ErrorContext(ctx, "attribute not found",
+			"attribute", attribute,
+		)
+		return nil, errors.NewUnexpected(fmt.Sprintf("attribute %s not found", attribute))
+	}
+
+	strValue, ok := value.(string)
+	if !ok {
+		slog.ErrorContext(ctx, "attribute is not a string",
+			"attribute", attribute,
+		)
+		return nil, errors.NewUnexpected(fmt.Sprintf("unexpected attribute type for %s - type %T", attribute, value))
+	}
+
+	return []byte(strValue), nil
+
+}
+
+// EmailToUsername converts an email to a username
+func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+	return m.emailToAttribute(ctx, msg, "username")
+}
+
+// EmailToSub converts an email to a sub
+func (m *messageHandlerOrchestrator) EmailToSub(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+	return m.emailToAttribute(ctx, msg, "user_id")
 }
 
 // GetUserMetadata retrieves user metadata based on the input strategy

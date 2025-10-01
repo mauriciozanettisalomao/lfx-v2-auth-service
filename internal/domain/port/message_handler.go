@@ -14,5 +14,6 @@ type MessageHandler interface {
 type UserHandler interface {
 	UpdateUser(ctx context.Context, msg TransportMessenger) ([]byte, error)
 	EmailToUsername(ctx context.Context, msg TransportMessenger) ([]byte, error)
+	EmailToSub(ctx context.Context, msg TransportMessenger) ([]byte, error)
 	GetUserMetadata(ctx context.Context, msg TransportMessenger) ([]byte, error)
 }
