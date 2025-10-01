@@ -18,7 +18,7 @@ type Auth0User struct {
 // Auth0Identity represents an identity in Auth0
 type Auth0Identity struct {
 	Connection string `json:"connection"`
-	UserID     string `json:"user_id"`
+	UserID     any    `json:"user_id"`
 	Provider   string `json:"provider"`
 	IsSocial   bool   `json:"isSocial"`
 }
