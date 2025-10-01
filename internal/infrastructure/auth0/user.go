@@ -204,16 +204,26 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 				//
 				// At this point, we know that the user is found, but the validation is to
 				// make sure the username is from the Username-Password-Authentication connection
-				if criteria == constants.CriteriaTypeUsername && identity.UserID != user.Username {
+
+				userID, ok := identity.UserID.(string)
+				if !ok {
 					slog.DebugContext(ctx, "user found, but it's not the correct identity",
 						"filter", usernameFilter,
-						"user_id", redaction.Redact(identity.UserID),
+						"user_id", redaction.Redact(fmt.Sprintf("%v", identity.UserID)),
+					)
+					continue
+				}
+
+				if criteria == constants.CriteriaTypeUsername && userID != user.Username {
+					slog.DebugContext(ctx, "user found, but it's not the correct identity",
+						"filter", usernameFilter,
+						"user_id", redaction.Redact(userID),
 					)
 					// if the connection is Password-Authentication and the user is not the one we are looking for,
 					// we need to return an error
 					return nil, errors.NewNotFound("user not found")
 				}
-				user.Username = identity.UserID
+				user.Username = userID
 				return userResult.ToUser(), nil
 			}
 		}
