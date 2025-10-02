@@ -13,23 +13,36 @@ import (
 
 // Mock implementations for testing
 type mockStorageReaderWriter struct {
-	users      map[string]*AutheliaUser
-	getUserErr error
-	listErr    error
-	setErr     error
+	users            map[string]*AutheliaUser
+	getUserErr       error
+	listErr          error
+	setErr           error
+	setUserLookupErr error
 }
 
-func (m *mockStorageReaderWriter) GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error) {
+func (m *mockStorageReaderWriter) GetUser(ctx context.Context, key string) (*AutheliaUser, error) {
 	if m.getUserErr != nil {
 		return nil, m.getUserErr
 	}
-	if user == nil || user.User == nil {
-		return nil, errors.New("user is required")
+	if key == "" {
+		return nil, errors.New("key is required")
 	}
-	if foundUser, exists := m.users[user.Username]; exists {
+	if foundUser, exists := m.users[key]; exists {
 		return foundUser, nil
 	}
 	return nil, errors.New("user not found")
+}
+
+func (m *mockStorageReaderWriter) SetUserLookup(ctx context.Context, lookupKey, key, value string) (any, error) {
+	if m.setUserLookupErr != nil {
+		return nil, m.setUserLookupErr
+	}
+	return nil, nil
+}
+
+func (m *mockStorageReaderWriter) BuildLookupKey(ctx context.Context, lookupKey, key string) string {
+	// Simple mock implementation - just concatenate with a separator
+	return lookupKey + ":" + key
 }
 
 func (m *mockStorageReaderWriter) ListUsers(ctx context.Context) (map[string]*AutheliaUser, error) {
@@ -61,6 +74,7 @@ type mockOrchestrator struct {
 	restartCalled       bool
 	lastYAMLData        []byte
 	lastSecretData      map[string][]byte
+	setUserLookupErr    error
 }
 
 func (m *mockOrchestrator) LoadUsersOrigin(ctx context.Context) (map[string]any, error) {
@@ -344,6 +358,7 @@ func TestSync_SyncUsers(t *testing.T) {
 		updateOriginErr     error
 		updateSecretsErr    error
 		restartErr          error
+		setUserLookupErr    error
 	}{
 		{
 			name: "no sync needed - users match",
@@ -367,6 +382,7 @@ func TestSync_SyncUsers(t *testing.T) {
 			expectUpdateSecrets: false,
 			expectRestart:       false,
 			expectError:         false,
+			setUserLookupErr:    nil,
 		},
 		{
 			name: "sync needed - user missing from orchestrator",
@@ -384,6 +400,7 @@ func TestSync_SyncUsers(t *testing.T) {
 			expectUpdateSecrets: true,
 			expectRestart:       true,
 			expectError:         false,
+			setUserLookupErr:    nil,
 		},
 		{
 			name: "sync needed - password mismatch",
@@ -407,12 +424,14 @@ func TestSync_SyncUsers(t *testing.T) {
 			expectUpdateSecrets: false,
 			expectRestart:       false,
 			expectError:         false,
+			setUserLookupErr:    nil,
 		},
 		{
-			name:         "load users error",
-			storageUsers: nil,
-			storageErr:   errors.New("storage failed"),
-			expectError:  true,
+			name:             "load users error",
+			storageUsers:     nil,
+			storageErr:       errors.New("storage failed"),
+			expectError:      true,
+			setUserLookupErr: nil,
 		},
 		{
 			name: "update origin error",
@@ -426,8 +445,9 @@ func TestSync_SyncUsers(t *testing.T) {
 			orchestratorUsers: map[string]any{
 				"users": map[string]any{},
 			},
-			updateOriginErr: errors.New("update origin failed"),
-			expectError:     true,
+			updateOriginErr:  errors.New("update origin failed"),
+			expectError:      true,
+			setUserLookupErr: nil,
 		},
 		{
 			name: "update secrets error",
@@ -443,6 +463,7 @@ func TestSync_SyncUsers(t *testing.T) {
 			},
 			updateSecretsErr: errors.New("update secrets failed"),
 			expectError:      true,
+			setUserLookupErr: nil,
 		},
 		{
 			name: "restart error",
@@ -456,8 +477,9 @@ func TestSync_SyncUsers(t *testing.T) {
 			orchestratorUsers: map[string]any{
 				"users": map[string]any{},
 			},
-			restartErr:  errors.New("restart failed"),
-			expectError: true,
+			restartErr:       errors.New("restart failed"),
+			expectError:      true,
+			setUserLookupErr: nil,
 		},
 	}
 
@@ -466,8 +488,9 @@ func TestSync_SyncUsers(t *testing.T) {
 			s := &sync{}
 
 			mockStorage := &mockStorageReaderWriter{
-				users:   tt.storageUsers,
-				listErr: tt.storageErr,
+				users:            tt.storageUsers,
+				listErr:          tt.storageErr,
+				setUserLookupErr: tt.setUserLookupErr,
 			}
 
 			mockOrch := &mockOrchestrator{
@@ -475,6 +498,7 @@ func TestSync_SyncUsers(t *testing.T) {
 				updateOriginErr:  tt.updateOriginErr,
 				updateSecretsErr: tt.updateSecretsErr,
 				restartErr:       tt.restartErr,
+				setUserLookupErr: tt.setUserLookupErr,
 			}
 
 			err := s.syncUsers(ctx, mockStorage, mockOrch)
