@@ -119,6 +119,87 @@ func (um *UserMetadata) userMetadataSanitize() {
 	}
 }
 
+// Patch updates the UserMetadata with the update values only if the update values are not nil
+func (a *UserMetadata) Patch(update *UserMetadata) bool {
+
+	if update == nil {
+		return false
+	}
+
+	updated := false
+
+	if update.Picture != nil {
+		a.Picture = update.Picture
+		updated = true
+	}
+
+	if update.Zoneinfo != nil {
+		a.Zoneinfo = update.Zoneinfo
+		updated = true
+	}
+
+	if update.Name != nil {
+		a.Name = update.Name
+		updated = true
+	}
+
+	if update.GivenName != nil {
+		a.GivenName = update.GivenName
+		updated = true
+	}
+
+	if update.FamilyName != nil {
+		a.FamilyName = update.FamilyName
+		updated = true
+	}
+
+	if update.JobTitle != nil {
+		a.JobTitle = update.JobTitle
+		updated = true
+	}
+
+	if update.Organization != nil {
+		a.Organization = update.Organization
+		updated = true
+	}
+
+	if update.Country != nil {
+		a.Country = update.Country
+		updated = true
+	}
+
+	if update.StateProvince != nil {
+		a.StateProvince = update.StateProvince
+		updated = true
+	}
+	if update.City != nil {
+		a.City = update.City
+		updated = true
+	}
+
+	if update.Address != nil {
+		a.Address = update.Address
+		updated = true
+	}
+
+	if update.PostalCode != nil {
+		a.PostalCode = update.PostalCode
+		updated = true
+	}
+
+	if update.PhoneNumber != nil {
+		a.PhoneNumber = update.PhoneNumber
+		updated = true
+	}
+
+	if update.TShirtSize != nil {
+		a.TShirtSize = update.TShirtSize
+		updated = true
+	}
+
+	return updated
+}
+
 // PrepareForMetadataLookup prepares the user for metadata lookup based on the input
 // Returns true if should use canonical lookup, false if should use search
 func (u *User) PrepareForMetadataLookup(input string) bool {

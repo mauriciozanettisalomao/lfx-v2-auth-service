@@ -12,6 +12,19 @@ The service operates as a NATS-based microservice, responding to request/reply p
 - Go 1.24.5+
 - NATS server
 - Auth0 configuration (optional, defaults to mock mode)
+- Kubernetes cluster (for local Authelia development setup)
+
+### Local Development Support
+
+The auth-service supports **Authelia + NATS KV** integration for local development environments. This setup provides:
+
+- **Authelia** as a local identity provider running in Kubernetes
+- **NATS Key-Value store** for persistent user data storage
+- **Automatic synchronization** between NATS KV and Authelia's ConfigMap/Secrets
+- **DaemonSet restart capability** when user data changes require Authelia pod restarts
+
+For detailed information about the Authelia integration architecture and sync mechanisms, see: [`internal/infrastructure/authelia`](internal/infrastructure/authelia)
+
 
 ### Installation
 

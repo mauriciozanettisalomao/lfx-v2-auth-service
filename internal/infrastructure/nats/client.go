@@ -6,6 +6,7 @@ package nats
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
@@ -13,12 +14,14 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // NATSClient wraps the NATS connection and provides access control operations
 type NATSClient struct {
 	conn    *nats.Conn
 	config  Config
+	kvStore map[string]jetstream.KeyValue
 	timeout time.Duration
 }
 
@@ -46,6 +49,42 @@ func (c *NATSClient) IsReady(ctx context.Context) error {
 		return errors.NewServiceUnavailable("NATS client is not ready, connection is not established or is draining")
 	}
 	return nil
+}
+
+// KeyValueStore creates a JetStream client and gets the key-value store for projects.
+func (c *NATSClient) KeyValueStore(ctx context.Context, bucketName string) error {
+	js, err := jetstream.New(c.conn)
+	if err != nil {
+		slog.ErrorContext(ctx, "error creating NATS JetStream client",
+			"error", err,
+			"nats_url", c.conn.ConnectedUrl(),
+		)
+		return err
+	}
+	kvStore, err := js.KeyValue(ctx, bucketName)
+	if err != nil {
+		slog.ErrorContext(ctx, "error getting NATS JetStream key-value store",
+			"error", err,
+			"nats_url", c.conn.ConnectedUrl(),
+			"bucket", bucketName,
+		)
+		return err
+	}
+
+	if c.kvStore == nil {
+		c.kvStore = make(map[string]jetstream.KeyValue)
+	}
+	c.kvStore[bucketName] = kvStore
+	return nil
+}
+
+// GetKVStore returns the KV store for a given bucket name
+func (c *NATSClient) GetKVStore(bucketName string) (jetstream.KeyValue, bool) {
+	if c.kvStore == nil {
+		return nil, false
+	}
+	kvStore, exists := c.kvStore[bucketName]
+	return kvStore, exists
 }
 
 // SubscribeWithTransportMessenger subscribes to a subject with proper TransportMessenger handling
@@ -118,6 +157,25 @@ func NewClient(ctx context.Context, config Config) (*NATSClient, error) {
 		conn:    conn,
 		config:  config,
 		timeout: config.Timeout,
+	}
+
+	var buckets []string
+	// Check if Authelia is enabled by checking the environment variable directly
+	if os.Getenv(constants.UserRepositoryTypeEnvKey) == constants.UserRepositoryTypeAuthelia {
+		buckets = append(buckets, constants.KVBucketNameAutheliaUsers)
+	}
+
+	for _, bucketName := range buckets {
+		if err := client.KeyValueStore(ctx, bucketName); err != nil {
+			slog.ErrorContext(ctx, "failed to initialize NATS key-value store",
+				"error", err,
+				"bucket", bucketName,
+			)
+			return nil, errors.NewServiceUnavailable("failed to initialize NATS key-value store", err)
+		}
+		slog.InfoContext(ctx, "NATS key-value store initialized",
+			"bucket", bucketName,
+		)
 	}
 
 	slog.InfoContext(ctx, "NATS client created successfully",
