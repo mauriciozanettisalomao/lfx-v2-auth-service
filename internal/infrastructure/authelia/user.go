@@ -6,11 +6,14 @@ package authelia
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 // userWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
@@ -22,7 +25,47 @@ type userWriter struct {
 
 // SearchUser searches for a user in storage
 func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
-	return nil, errors.NewUnexpected("not implemented")
+
+	if user == nil {
+		return nil, errors.NewValidation("user is required")
+	}
+
+	param := func(criteriaType string) string {
+		switch criteriaType {
+		case constants.CriteriaTypeEmail:
+			slog.DebugContext(ctx, "searching user",
+				"criteria", criteria,
+				"email", redaction.RedactEmail(user.PrimaryEmail),
+			)
+			if strings.TrimSpace(user.PrimaryEmail) == "" {
+				return ""
+			}
+			return a.storage.BuildLookupKey(ctx, "email", user.BuildEmailIndexKey(ctx))
+		case constants.CriteriaTypeUsername:
+			slog.DebugContext(ctx, "searching user",
+				"criteria", criteria,
+				"username", redaction.Redact(user.Username),
+			)
+			return user.Username
+		}
+		return ""
+	}
+
+	key := param(criteria)
+	if key == "" {
+		return nil, errors.NewValidation("invalid criteria type")
+	}
+
+	existingUser, err := a.storage.GetUser(ctx, key)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get existing user from storage",
+			"error", err,
+			"key", key,
+		)
+		return nil, err
+	}
+	return existingUser.User, nil
+
 }
 
 // GetUser retrieves a user from storage
@@ -47,11 +90,13 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	existingAutheliaUser := &AutheliaUser{}
 	existingAutheliaUser.SetUsername(user.Username)
 
-	existingUser, err := a.storage.GetUser(ctx, existingAutheliaUser)
+	existingUser, err := a.storage.GetUser(ctx, existingAutheliaUser.Username)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to get existing user from storage",
 			"username", user.Username,
-			"error", err)
+			"error", err,
+			"key", existingAutheliaUser.Username,
+		)
 		return nil, errors.NewUnexpected("failed to get existing user from storage", err)
 	}
 
@@ -67,7 +112,8 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 			if err != nil {
 				slog.ErrorContext(ctx, "failed to update user in storage",
 					"username", user.Username,
-					"error", err)
+					"error", err,
+				)
 				return nil, errors.NewUnexpected("failed to update user in storage", err)
 			}
 		}

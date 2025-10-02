@@ -4,6 +4,10 @@
 package model
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/converters"
@@ -610,5 +614,552 @@ func TestUser_PrepareForMetadataLookup_PreservesOtherFields(t *testing.T) {
 	}
 	if user.UserMetadata != originalMetadata {
 		t.Errorf("UserMetadata was modified")
+	}
+}
+
+func TestUser_buildIndexKey(t *testing.T) {
+	tests := []struct {
+		name         string
+		kind         string
+		data         string
+		expectedHash string
+	}{
+		{
+			name:         "simple email data",
+			kind:         "email",
+			data:         "user@example.com",
+			expectedHash: "b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514", // SHA256 of "user@example.com"
+		},
+		{
+			name:         "empty data",
+			kind:         "email",
+			data:         "",
+			expectedHash: "",
+		},
+		{
+			name:         "data with special characters",
+			kind:         "email",
+			data:         "user+test@example.com",
+			expectedHash: "", // Will be calculated in test
+		},
+		{
+			name:         "unicode data",
+			kind:         "email",
+			data:         "用户@example.com",
+			expectedHash: "", // Will be calculated in test
+		},
+		{
+			name:         "long data string",
+			kind:         "email",
+			data:         strings.Repeat("a", 1000),
+			expectedHash: "", // Will be calculated in test
+		},
+		{
+			name:         "different kind same data",
+			kind:         "username",
+			data:         "user@example.com",
+			expectedHash: "b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514", // Same hash as kind doesn't affect hash
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := User{}
+			ctx := context.Background()
+
+			result := user.buildIndexKey(ctx, tt.kind, tt.data)
+
+			// Calculate expected hash if not provided
+			expectedHash := tt.expectedHash
+			if expectedHash == "" {
+				hash := sha256.Sum256([]byte(tt.data))
+				expectedHash = hex.EncodeToString(hash[:])
+			}
+
+			// Verify the result matches expected hash
+			if result != expectedHash {
+				t.Errorf("buildIndexKey() = %q, want %q", result, expectedHash)
+			}
+
+			// Verify the result is a valid hex string of correct length (64 chars for SHA256)
+			if len(result) != 64 {
+				t.Errorf("buildIndexKey() result length = %d, want 64", len(result))
+			}
+
+			// Verify it's valid hex
+			if _, err := hex.DecodeString(result); err != nil {
+				t.Errorf("buildIndexKey() result is not valid hex: %v", err)
+			}
+		})
+	}
+}
+
+func TestUser_buildIndexKey_Consistency(t *testing.T) {
+	// Test that the same input always produces the same output
+	user := User{}
+	ctx := context.Background()
+	data := "test@example.com"
+	kind := "email"
+
+	result1 := user.buildIndexKey(ctx, kind, data)
+	result2 := user.buildIndexKey(ctx, kind, data)
+
+	if result1 != result2 {
+		t.Errorf("buildIndexKey() not consistent: first=%q, second=%q", result1, result2)
+	}
+}
+
+func TestUser_BuildEmailIndexKey(t *testing.T) {
+	tests := []struct {
+		name         string
+		primaryEmail string
+		expected     string
+	}{
+		{
+			name:         "simple email",
+			primaryEmail: "user@example.com",
+			expected:     "", // Will be calculated
+		},
+		{
+			name:         "email with uppercase",
+			primaryEmail: "USER@EXAMPLE.COM",
+			expected:     "", // Should be same as lowercase version
+		},
+		{
+			name:         "email with mixed case",
+			primaryEmail: "User@Example.Com",
+			expected:     "", // Should be same as lowercase version
+		},
+		{
+			name:         "email with leading/trailing spaces",
+			primaryEmail: "  user@example.com  ",
+			expected:     "", // Should be same as trimmed version
+		},
+		{
+			name:         "email with leading/trailing spaces and mixed case",
+			primaryEmail: "  USER@EXAMPLE.COM  ",
+			expected:     "", // Should be same as trimmed lowercase version
+		},
+		{
+			name:         "empty email",
+			primaryEmail: "",
+			expected:     "",
+		},
+		{
+			name:         "email with only spaces",
+			primaryEmail: "   ",
+			expected:     "",
+		},
+		{
+			name:         "email with plus sign",
+			primaryEmail: "user+test@example.com",
+			expected:     "", // Will be calculated
+		},
+		{
+			name:         "email with dots in local part",
+			primaryEmail: "user.name@example.com",
+			expected:     "", // Will be calculated
+		},
+		{
+			name:         "email with subdomain",
+			primaryEmail: "user@mail.example.com",
+			expected:     "", // Will be calculated
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := User{PrimaryEmail: tt.primaryEmail}
+			ctx := context.Background()
+
+			result := user.BuildEmailIndexKey(ctx)
+
+			// Calculate expected hash
+			var expectedHash string
+			if tt.expected != "" {
+				expectedHash = tt.expected
+			} else {
+				// Check if this is a case where we expect empty string explicitly
+				normalizedEmail := strings.TrimSpace(strings.ToLower(tt.primaryEmail))
+				if normalizedEmail == "" {
+					expectedHash = "" // Empty emails should return empty string
+				} else {
+					hash := sha256.Sum256([]byte(normalizedEmail))
+					expectedHash = hex.EncodeToString(hash[:])
+				}
+			}
+
+			if result != expectedHash {
+				t.Errorf("BuildEmailIndexKey() = %q, want %q", result, expectedHash)
+			}
+			// Verify it's valid hex
+			if result == "" {
+				if _, err := hex.DecodeString(result); err != nil {
+					t.Errorf("BuildEmailIndexKey() result is not valid hex: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestUser_BuildEmailIndexKey_Normalization(t *testing.T) {
+	// Test that different representations of the same email produce the same hash
+	ctx := context.Background()
+
+	testCases := []struct {
+		name   string
+		emails []string // All should produce the same hash
+	}{
+		{
+			name: "case normalization",
+			emails: []string{
+				"user@example.com",
+				"USER@EXAMPLE.COM",
+				"User@Example.Com",
+				"uSeR@eXaMpLe.CoM",
+			},
+		},
+		{
+			name: "whitespace normalization",
+			emails: []string{
+				"user@example.com",
+				"  user@example.com",
+				"user@example.com  ",
+				"  user@example.com  ",
+				"\t user@example.com \n",
+			},
+		},
+		{
+			name: "combined normalization",
+			emails: []string{
+				"user@example.com",
+				"  USER@EXAMPLE.COM  ",
+				"\t User@Example.Com \n",
+				"uSeR@eXaMpLe.CoM",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var hashes []string
+
+			for _, email := range tc.emails {
+				user := User{PrimaryEmail: email}
+				hash := user.BuildEmailIndexKey(ctx)
+				hashes = append(hashes, hash)
+			}
+
+			// All hashes should be identical
+			firstHash := hashes[0]
+			for i, hash := range hashes {
+				if hash != firstHash {
+					t.Errorf("Email %q (index %d) produced hash %q, expected %q",
+						tc.emails[i], i, hash, firstHash)
+				}
+			}
+		})
+	}
+}
+
+func TestUser_BuildEmailIndexKey_Consistency(t *testing.T) {
+	// Test that multiple calls with the same user produce the same result
+	user := User{PrimaryEmail: "test@example.com"}
+	ctx := context.Background()
+
+	result1 := user.BuildEmailIndexKey(ctx)
+	result2 := user.BuildEmailIndexKey(ctx)
+
+	if result1 != result2 {
+		t.Errorf("BuildEmailIndexKey() not consistent: first=%q, second=%q", result1, result2)
+	}
+}
+
+func TestUserMetadata_Patch(t *testing.T) {
+	tests := []struct {
+		name           string
+		original       *UserMetadata
+		update         *UserMetadata
+		expectedResult bool
+		expectedFinal  *UserMetadata
+	}{
+		{
+			name:           "nil update returns false",
+			original:       &UserMetadata{Name: converters.StringPtr("John")},
+			update:         nil,
+			expectedResult: false,
+			expectedFinal:  &UserMetadata{Name: converters.StringPtr("John")},
+		},
+		{
+			name:           "update single field",
+			original:       &UserMetadata{Name: converters.StringPtr("John")},
+			update:         &UserMetadata{GivenName: converters.StringPtr("Johnny")},
+			expectedResult: true,
+			expectedFinal: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Johnny"),
+			},
+		},
+		{
+			name: "update multiple fields",
+			original: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Johnny"),
+			},
+			update: &UserMetadata{
+				FamilyName:   converters.StringPtr("Doe"),
+				JobTitle:     converters.StringPtr("Engineer"),
+				Organization: converters.StringPtr("ACME"),
+			},
+			expectedResult: true,
+			expectedFinal: &UserMetadata{
+				Name:         converters.StringPtr("John"),
+				GivenName:    converters.StringPtr("Johnny"),
+				FamilyName:   converters.StringPtr("Doe"),
+				JobTitle:     converters.StringPtr("Engineer"),
+				Organization: converters.StringPtr("ACME"),
+			},
+		},
+		{
+			name: "overwrite existing fields",
+			original: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Johnny"),
+				JobTitle:  converters.StringPtr("Developer"),
+			},
+			update: &UserMetadata{
+				GivenName: converters.StringPtr("Jon"),
+				JobTitle:  converters.StringPtr("Senior Engineer"),
+			},
+			expectedResult: true,
+			expectedFinal: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Jon"),
+				JobTitle:  converters.StringPtr("Senior Engineer"),
+			},
+		},
+		{
+			name:     "update all fields",
+			original: &UserMetadata{},
+			update: &UserMetadata{
+				Picture:       converters.StringPtr("pic.jpg"),
+				Zoneinfo:      converters.StringPtr("UTC"),
+				Name:          converters.StringPtr("John Doe"),
+				GivenName:     converters.StringPtr("John"),
+				FamilyName:    converters.StringPtr("Doe"),
+				JobTitle:      converters.StringPtr("Engineer"),
+				Organization:  converters.StringPtr("ACME Corp"),
+				Country:       converters.StringPtr("USA"),
+				StateProvince: converters.StringPtr("CA"),
+				City:          converters.StringPtr("SF"),
+				Address:       converters.StringPtr("123 Main St"),
+				PostalCode:    converters.StringPtr("94102"),
+				PhoneNumber:   converters.StringPtr("+1-555-1234"),
+				TShirtSize:    converters.StringPtr("L"),
+			},
+			expectedResult: true,
+			expectedFinal: &UserMetadata{
+				Picture:       converters.StringPtr("pic.jpg"),
+				Zoneinfo:      converters.StringPtr("UTC"),
+				Name:          converters.StringPtr("John Doe"),
+				GivenName:     converters.StringPtr("John"),
+				FamilyName:    converters.StringPtr("Doe"),
+				JobTitle:      converters.StringPtr("Engineer"),
+				Organization:  converters.StringPtr("ACME Corp"),
+				Country:       converters.StringPtr("USA"),
+				StateProvince: converters.StringPtr("CA"),
+				City:          converters.StringPtr("SF"),
+				Address:       converters.StringPtr("123 Main St"),
+				PostalCode:    converters.StringPtr("94102"),
+				PhoneNumber:   converters.StringPtr("+1-555-1234"),
+				TShirtSize:    converters.StringPtr("L"),
+			},
+		},
+		{
+			name: "update with nil fields (no change)",
+			original: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Johnny"),
+			},
+			update: &UserMetadata{
+				Name:      nil,
+				GivenName: nil,
+				JobTitle:  nil,
+			},
+			expectedResult: false,
+			expectedFinal: &UserMetadata{
+				Name:      converters.StringPtr("John"),
+				GivenName: converters.StringPtr("Johnny"),
+			},
+		},
+		{
+			name: "mixed nil and non-nil updates",
+			original: &UserMetadata{
+				Name:     converters.StringPtr("John"),
+				JobTitle: converters.StringPtr("Developer"),
+			},
+			update: &UserMetadata{
+				Name:         nil,                            // Should not update
+				GivenName:    converters.StringPtr("Johnny"), // Should update
+				JobTitle:     nil,                            // Should not update
+				Organization: converters.StringPtr("ACME"),   // Should update
+			},
+			expectedResult: true,
+			expectedFinal: &UserMetadata{
+				Name:         converters.StringPtr("John"),
+				GivenName:    converters.StringPtr("Johnny"),
+				JobTitle:     converters.StringPtr("Developer"),
+				Organization: converters.StringPtr("ACME"),
+			},
+		},
+		{
+			name:           "empty update object",
+			original:       &UserMetadata{Name: converters.StringPtr("John")},
+			update:         &UserMetadata{},
+			expectedResult: false,
+			expectedFinal:  &UserMetadata{Name: converters.StringPtr("John")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a deep copy of original to avoid modifying test data
+			originalCopy := &UserMetadata{}
+			if tt.original != nil {
+				*originalCopy = *tt.original
+				// Copy pointer fields
+				if tt.original.Picture != nil {
+					originalCopy.Picture = converters.StringPtr(*tt.original.Picture)
+				}
+				if tt.original.Zoneinfo != nil {
+					originalCopy.Zoneinfo = converters.StringPtr(*tt.original.Zoneinfo)
+				}
+				if tt.original.Name != nil {
+					originalCopy.Name = converters.StringPtr(*tt.original.Name)
+				}
+				if tt.original.GivenName != nil {
+					originalCopy.GivenName = converters.StringPtr(*tt.original.GivenName)
+				}
+				if tt.original.FamilyName != nil {
+					originalCopy.FamilyName = converters.StringPtr(*tt.original.FamilyName)
+				}
+				if tt.original.JobTitle != nil {
+					originalCopy.JobTitle = converters.StringPtr(*tt.original.JobTitle)
+				}
+				if tt.original.Organization != nil {
+					originalCopy.Organization = converters.StringPtr(*tt.original.Organization)
+				}
+				if tt.original.Country != nil {
+					originalCopy.Country = converters.StringPtr(*tt.original.Country)
+				}
+				if tt.original.StateProvince != nil {
+					originalCopy.StateProvince = converters.StringPtr(*tt.original.StateProvince)
+				}
+				if tt.original.City != nil {
+					originalCopy.City = converters.StringPtr(*tt.original.City)
+				}
+				if tt.original.Address != nil {
+					originalCopy.Address = converters.StringPtr(*tt.original.Address)
+				}
+				if tt.original.PostalCode != nil {
+					originalCopy.PostalCode = converters.StringPtr(*tt.original.PostalCode)
+				}
+				if tt.original.PhoneNumber != nil {
+					originalCopy.PhoneNumber = converters.StringPtr(*tt.original.PhoneNumber)
+				}
+				if tt.original.TShirtSize != nil {
+					originalCopy.TShirtSize = converters.StringPtr(*tt.original.TShirtSize)
+				}
+			}
+
+			result := originalCopy.Patch(tt.update)
+
+			// Check return value
+			if result != tt.expectedResult {
+				t.Errorf("Patch() returned %v, expected %v", result, tt.expectedResult)
+			}
+
+			// Check final state
+			checkStringPtr := func(fieldName string, got, want *string) {
+				if (got == nil) != (want == nil) {
+					t.Errorf("%s pointer mismatch: got nil=%v, want nil=%v", fieldName, got == nil, want == nil)
+					return
+				}
+				if got != nil && want != nil && *got != *want {
+					t.Errorf("%s = %q, want %q", fieldName, *got, *want)
+				}
+			}
+
+			checkStringPtr("Picture", originalCopy.Picture, tt.expectedFinal.Picture)
+			checkStringPtr("Zoneinfo", originalCopy.Zoneinfo, tt.expectedFinal.Zoneinfo)
+			checkStringPtr("Name", originalCopy.Name, tt.expectedFinal.Name)
+			checkStringPtr("GivenName", originalCopy.GivenName, tt.expectedFinal.GivenName)
+			checkStringPtr("FamilyName", originalCopy.FamilyName, tt.expectedFinal.FamilyName)
+			checkStringPtr("JobTitle", originalCopy.JobTitle, tt.expectedFinal.JobTitle)
+			checkStringPtr("Organization", originalCopy.Organization, tt.expectedFinal.Organization)
+			checkStringPtr("Country", originalCopy.Country, tt.expectedFinal.Country)
+			checkStringPtr("StateProvince", originalCopy.StateProvince, tt.expectedFinal.StateProvince)
+			checkStringPtr("City", originalCopy.City, tt.expectedFinal.City)
+			checkStringPtr("Address", originalCopy.Address, tt.expectedFinal.Address)
+			checkStringPtr("PostalCode", originalCopy.PostalCode, tt.expectedFinal.PostalCode)
+			checkStringPtr("PhoneNumber", originalCopy.PhoneNumber, tt.expectedFinal.PhoneNumber)
+			checkStringPtr("TShirtSize", originalCopy.TShirtSize, tt.expectedFinal.TShirtSize)
+		})
+	}
+}
+
+func TestUserMetadata_Patch_Idempotency(t *testing.T) {
+	// Test that applying the same patch multiple times produces the same result
+	update := &UserMetadata{
+		GivenName:    converters.StringPtr("Johnny"),
+		Organization: converters.StringPtr("ACME"),
+	}
+
+	// Make copies for multiple patch operations
+	copy1 := &UserMetadata{
+		Name:     converters.StringPtr("John"),
+		JobTitle: converters.StringPtr("Developer"),
+	}
+	copy2 := &UserMetadata{
+		Name:     converters.StringPtr("John"),
+		JobTitle: converters.StringPtr("Developer"),
+	}
+
+	// Apply patch once
+	result1 := copy1.Patch(update)
+
+	// Apply patch again to the already patched object
+	result2 := copy1.Patch(update)
+
+	// Apply patch to fresh copy
+	result3 := copy2.Patch(update)
+
+	// First application should return true (changes made)
+	if !result1 {
+		t.Errorf("First patch application should return true")
+	}
+
+	// Second application should return true (still overwrites even with same values)
+	if !result2 {
+		t.Errorf("Second patch application should return true")
+	}
+
+	// Third application should return true
+	if !result3 {
+		t.Errorf("Third patch application should return true")
+	}
+
+	// Final states should be identical
+	if copy1.Name == nil || copy2.Name == nil || *copy1.Name != *copy2.Name {
+		t.Errorf("Name fields don't match after multiple patches")
+	}
+	if copy1.GivenName == nil || copy2.GivenName == nil || *copy1.GivenName != *copy2.GivenName {
+		t.Errorf("GivenName fields don't match after multiple patches")
+	}
+	if copy1.JobTitle == nil || copy2.JobTitle == nil || *copy1.JobTitle != *copy2.JobTitle {
+		t.Errorf("JobTitle fields don't match after multiple patches")
+	}
+	if copy1.Organization == nil || copy2.Organization == nil || *copy1.Organization != *copy2.Organization {
+		t.Errorf("Organization fields don't match after multiple patches")
 	}
 }
