@@ -6,6 +6,7 @@ package authelia
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
@@ -36,6 +37,9 @@ func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria 
 				"criteria", criteria,
 				"email", redaction.RedactEmail(user.PrimaryEmail),
 			)
+			if strings.TrimSpace(user.PrimaryEmail) == "" {
+				return ""
+			}
 			return a.storage.BuildLookupKey(ctx, "email", user.BuildEmailIndexKey(ctx))
 		case constants.CriteriaTypeUsername:
 			slog.DebugContext(ctx, "searching user",

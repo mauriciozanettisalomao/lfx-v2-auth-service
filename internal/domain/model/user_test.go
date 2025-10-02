@@ -873,20 +873,6 @@ func TestUser_BuildEmailIndexKey_Consistency(t *testing.T) {
 	}
 }
 
-func TestUser_BuildEmailIndexKey_EmptyUser(t *testing.T) {
-	// Test with empty user struct
-	user := User{}
-	ctx := context.Background()
-
-	result := user.BuildEmailIndexKey(ctx)
-
-	// Should produce hash of empty string
-	expectedHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	if result != expectedHash {
-		t.Errorf("BuildEmailIndexKey() with empty user = %q, want %q", result, expectedHash)
-	}
-}
-
 func TestUserMetadata_Patch(t *testing.T) {
 	tests := []struct {
 		name           string

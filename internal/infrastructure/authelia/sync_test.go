@@ -33,13 +33,6 @@ func (m *mockStorageReaderWriter) GetUser(ctx context.Context, key string) (*Aut
 	return nil, errors.New("user not found")
 }
 
-func (m *mockStorageReaderWriter) SetUserLookup(ctx context.Context, lookupKey, key, value string) (any, error) {
-	if m.setUserLookupErr != nil {
-		return nil, m.setUserLookupErr
-	}
-	return nil, nil
-}
-
 func (m *mockStorageReaderWriter) BuildLookupKey(ctx context.Context, lookupKey, key string) string {
 	// Simple mock implementation - just concatenate with a separator
 	return lookupKey + ":" + key

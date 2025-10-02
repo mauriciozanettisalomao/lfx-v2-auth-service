@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	kvLookupPrefix = "lookup"
+	kvLookupPrefix = "lookup/"
 )
 
 type internalStorageReaderWriter interface {

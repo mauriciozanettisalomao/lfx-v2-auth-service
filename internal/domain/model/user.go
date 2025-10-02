@@ -96,6 +96,9 @@ func (u User) buildIndexKey(ctx context.Context, kind, data string) string {
 // BuildEmailIndexKey builds the index key for the email
 func (u User) BuildEmailIndexKey(ctx context.Context) string {
 	data := strings.TrimSpace(strings.ToLower(u.PrimaryEmail))
+	if data == "" {
+		return ""
+	}
 	return u.buildIndexKey(ctx, "email", data)
 }
 
