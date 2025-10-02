@@ -12,6 +12,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
@@ -54,18 +55,18 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 	return responseJSON
 }
 
-func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
-
+// searchByEmail normalizes the email (lowercases and trims whitespace) and returns the matching user or an error
+func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, msg port.TransportMessenger) (*model.User, error) {
 	if m.userReader == nil {
-		return m.errorResponse("user service unavailable"), nil
+		return nil, errors.NewUnexpected("user service unavailable")
 	}
 
 	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
 	if email == "" {
-		return m.errorResponse("email is required"), nil
+		return nil, errors.NewUnexpected("email is required")
 	}
 
-	slog.DebugContext(ctx, "email to username",
+	slog.DebugContext(ctx, "search by email",
 		"email", redaction.RedactEmail(email),
 	)
 
@@ -78,10 +79,29 @@ func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg po
 	// Finding users by alternate emails is NOT available
 	user, err := m.userReader.SearchUser(ctx, user, constants.CriteriaTypeEmail)
 	if err != nil {
-		return m.errorResponse(err.Error()), nil
+		return nil, err
 	}
 
+	return user, nil
+
+}
+
+// EmailToUsername converts an email to a username
+func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+	user, err := m.searchByEmail(ctx, msg)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
 	return []byte(user.Username), nil
+}
+
+// EmailToSub converts an email to a sub
+func (m *messageHandlerOrchestrator) EmailToSub(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+	user, err := m.searchByEmail(ctx, msg)
+	if err != nil {
+		return m.errorResponse(err.Error()), nil
+	}
+	return []byte(user.UserID), nil
 }
 
 // GetUserMetadata retrieves user metadata based on the input strategy

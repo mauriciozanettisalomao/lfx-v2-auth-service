@@ -12,6 +12,10 @@ const (
 	// The subject is of the form: lfx.auth-service.email_to_username
 	UserEmailToUserSubject = "lfx.auth-service.email_to_username"
 
+	// UserEmailToSubSubject is the subject for the user email to sub event.
+	// The subject is of the form: lfx.auth-service.email_to_sub
+	UserEmailToSubSubject = "lfx.auth-service.email_to_sub"
+
 	// UserMetadataUpdateSubject is the subject for the user metadata update event.
 	// The subject is of the form: lfx.auth-service.user_metadata.update
 	UserMetadataUpdateSubject = "lfx.auth-service.user_metadata.update"
