@@ -7,4 +7,7 @@ package constants
 const (
 	// KVBucketNameAutheliaUsers is the name of the KV bucket for authelia users.
 	KVBucketNameAutheliaUsers = "authelia-users"
+
+	// KVLookupPrefixAuthelia is the prefix for lookup keys in the KV store.
+	KVLookupPrefixAuthelia = "lookup/authelia-users/%s"
 )

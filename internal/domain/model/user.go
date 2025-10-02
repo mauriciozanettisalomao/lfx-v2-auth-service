@@ -4,10 +4,15 @@
 package model
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 // User represents a user in the system
@@ -70,7 +75,28 @@ func (u *User) UserSanitize() {
 		u.UserMetadata.userMetadataSanitize()
 	}
 
-	// TODO: add more sanitization functions as needed
+	// add more sanitization functions as needed
+}
+
+func (u User) buildIndexKey(ctx context.Context, kind, data string) string {
+
+	hash := sha256.Sum256([]byte(data))
+
+	key := hex.EncodeToString(hash[:])
+
+	slog.DebugContext(ctx, "index key built",
+		"kind", kind,
+		"data", redaction.Redact(data),
+		"key", key,
+	)
+
+	return key
+}
+
+// BuildEmailIndexKey builds the index key for the email
+func (u User) BuildEmailIndexKey(ctx context.Context) string {
+	data := strings.TrimSpace(strings.ToLower(u.PrimaryEmail))
+	return u.buildIndexKey(ctx, "email", data)
 }
 
 // sanitize sanitizes the user metadata by cleaning up string fields

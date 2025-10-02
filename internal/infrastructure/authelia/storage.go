@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -17,10 +18,15 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const (
+	kvLookupPrefix = "lookup"
+)
+
 type internalStorageReaderWriter interface {
-	GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error)
+	GetUser(ctx context.Context, key string) (*AutheliaUser, error)
 	ListUsers(ctx context.Context) (map[string]*AutheliaUser, error)
 	SetUser(ctx context.Context, user *AutheliaUser) (any, error)
+	BuildLookupKey(ctx context.Context, lookupKey, key string) string
 }
 
 // natsUserStorage implements UserStorage using NATS KV store
@@ -29,13 +35,34 @@ type natsUserStorage struct {
 	kvStore    jetstream.KeyValue
 }
 
-func (n *natsUserStorage) GetUser(ctx context.Context, user *AutheliaUser) (*AutheliaUser, error) {
+func (n *natsUserStorage) lookupUser(ctx context.Context, key string) (string, error) {
 
-	if user == nil || user.Username == "" {
-		return nil, errs.NewUnexpected("user is required")
+	if !strings.HasPrefix(key, kvLookupPrefix) {
+		return key, nil
 	}
 
-	entry, err := n.kvStore.Get(ctx, user.Username)
+	entry, err := n.kvStore.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			return "", errs.NewNotFound("user not found")
+		}
+		return "", errs.NewUnexpected("failed to get user from NATS KV", err)
+	}
+	return string(entry.Value()), nil
+}
+
+func (n *natsUserStorage) GetUser(ctx context.Context, key string) (*AutheliaUser, error) {
+
+	if key == "" {
+		return nil, errs.NewUnexpected("key is required")
+	}
+
+	username, errLookupUser := n.lookupUser(ctx, key)
+	if errLookupUser != nil {
+		return nil, errLookupUser
+	}
+
+	entry, err := n.kvStore.Get(ctx, username)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
 			return nil, errs.NewNotFound("user not found")
@@ -66,9 +93,13 @@ func (n *natsUserStorage) ListUsers(ctx context.Context) (map[string]*AutheliaUs
 
 	// Retrieve each user
 	for _, key := range keys {
-		autheliaUser := &AutheliaUser{}
-		autheliaUser.SetUsername(key)
-		user, err := n.GetUser(ctx, autheliaUser)
+
+		// Skip lookup keys since they are not users
+		if strings.HasPrefix(key, kvLookupPrefix) {
+			continue
+		}
+
+		user, err := n.GetUser(ctx, key)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to get user during list operation",
 				"username", key, "error", err)
@@ -98,7 +129,29 @@ func (n *natsUserStorage) SetUser(ctx context.Context, user *AutheliaUser) (any,
 		return nil, errs.NewUnexpected("failed to marshal user data", err)
 	}
 
-	return n.kvStore.Put(ctx, user.Username, data)
+	// user main data
+	_, errPut := n.kvStore.Put(ctx, user.Username, data)
+	if errPut != nil {
+		return nil, errs.NewUnexpected("failed to set user in NATS KV", errPut)
+	}
+
+	// lookup keys
+	if user.Email != "" {
+		user.PrimaryEmail = user.Email
+		//_, errPutLookup := n.setUserLookup(ctx, "email", user.BuildEmailIndexKey(ctx), user.Username)
+		_, errPutLookup := n.kvStore.Put(ctx, n.BuildLookupKey(ctx, "email", user.BuildEmailIndexKey(ctx)), []byte(user.Username))
+		if errPutLookup != nil {
+			return nil, errs.NewUnexpected("failed to set lookup key in NATS KV", errPutLookup)
+		}
+	}
+
+	return user, nil
+}
+
+// BuildLookupKey builds the lookup key for the given lookup key and key
+func (n *natsUserStorage) BuildLookupKey(ctx context.Context, lookupKey, key string) string {
+	prefix := fmt.Sprintf(constants.KVLookupPrefixAuthelia, lookupKey)
+	return fmt.Sprintf("%s/%s", prefix, key)
 }
 
 // newNATSUserStorage creates a new NATS-based user storage
