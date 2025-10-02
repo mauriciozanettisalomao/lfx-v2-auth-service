@@ -15,6 +15,7 @@ import (
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/auth0"
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/authelia"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/mock"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/service"
@@ -124,6 +125,43 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 		}
 
 		return userReaderWriter
+	case constants.UserRepositoryTypeAuthelia:
+		// Initialize NATS client first for Authelia NATS storage
+		natsInit(ctx)
+
+		// Load Authelia configuration from environment variables
+		configMapName := os.Getenv(constants.AutheliaConfigMapNameEnvKey)
+		if configMapName == "" {
+			configMapName = "authelia-users"
+		}
+		configMapNamespace := os.Getenv(constants.AutheliaConfigMapNamespaceEnvKey)
+		if configMapNamespace == "" {
+			configMapNamespace = "lfx"
+		}
+
+		daemonSetName := os.Getenv(constants.AutheliaDaemonSetNameEnvKey)
+		if daemonSetName == "" {
+			daemonSetName = "lfx-platform-authelia"
+		}
+
+		secretName := os.Getenv(constants.AutheliaSecretNameEnvKey)
+		if secretName == "" {
+			secretName = "authelia-users"
+		}
+
+		config := map[string]string{
+			"configmap-name":  configMapName,
+			"namespace":       configMapNamespace,
+			"daemon-set-name": daemonSetName,
+			"secret-name":     secretName,
+		}
+
+		// Create Authelia user repository with NATS client for storage
+		userWriter, err := authelia.NewUserReaderWriter(ctx, config, natsClient)
+		if err != nil {
+			log.Fatalf("failed to create Authelia user repository: %v", err)
+		}
+		return userWriter
 	default:
 		log.Fatalf("unsupported user repository type: %s", userRepositoryType)
 		return nil // This will never be reached due to log.Fatalf, but satisfies the linter
