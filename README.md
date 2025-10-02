@@ -101,7 +101,7 @@ nats request lfx.auth-service.email_to_username zephyr.stormwind@mythicaltech.io
 **Important Notes:**
 - This service searches for users by their **primary email** only
 - Linked/alternate email addresses are **not** supported for lookup
-- The service works with both Auth0 and mock repositories based on configuration
+- The service works with Auth0, Authelia, and mock repositories based on configuration
 
 ---
 
@@ -353,6 +353,9 @@ nats request lfx.auth-service.user_metadata.update '{
   }
 }'
 ```
+
+**Important Notes:**
+- The service works with Auth0, Authelia, and mock repositories based on configuration
 
 #### Configuration
 
