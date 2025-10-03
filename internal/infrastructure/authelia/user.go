@@ -146,6 +146,7 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string, use
 			return false
 		}
 		user.Sub = sub.String()
+		// user ID is used across the system as the unique identifier for the user
 		user.UserID = sub.String()
 		return true
 	}
