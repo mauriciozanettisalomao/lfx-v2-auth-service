@@ -102,6 +102,35 @@ The Authelia integration requires the following configuration parameters:
 - NATS server connection details (inherited from main service configuration)
 - Key-Value bucket configuration for user data storage
 
+## Subject Identifier (SUB) Management
+
+### SUB Generation and Persistence
+
+The Subject Identifier (SUB) in Authelia is a deterministic UUID that uniquely identifies each user within the system. Key characteristics:
+
+- **Deterministic Generation**: The SUB is a UUID that is consistently generated for each user by Authelia
+- **Token-Based Persistence**: To ensure consistent data retrieval from Authelia, the SUB is only persisted when a user is updated using a valid authentication token
+- **OIDC UserInfo Endpoint**: The SUB can be retrieved from Authelia's OIDC UserInfo endpoint at `/api/oidc/userinfo` using a valid token
+
+### Token-Based User Updates
+
+When updating user metadata through the auth service, the SUB is populated by accessing Authelia's UserInfo endpoint with the provided token:
+
+```bash
+# Example: Update user metadata with token (this populates the SUB)
+nats req --server nats://lfx-platform-nats.lfx.svc.cluster.local:4222 "lfx.auth-service.user_metadata.update" '{
+  "token": "authelia_at_Tx****",
+  "user_metadata": {
+    "city": "Metropolis"
+  }
+}'
+```
+
+This process ensures that:
+- The SUB is retrieved from Authelia's authoritative source
+- User data consistency is maintained across the system
+- The canonical user identifier is properly established for future lookups
+
 ## Security Considerations
 
 - User passwords are automatically generated and stored as bcrypt hashes in ConfigMaps
