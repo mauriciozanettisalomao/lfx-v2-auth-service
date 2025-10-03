@@ -149,11 +149,17 @@ func newUserReaderWriter(ctx context.Context) port.UserReaderWriter {
 			secretName = "authelia-users"
 		}
 
+		oidcUserInfoURL := os.Getenv(constants.AutheliaOIDCUserInfoURLEnvKey)
+		if oidcUserInfoURL == "" {
+			oidcUserInfoURL = "https://auth.k8s.orb.local/api/oidc/userinfo"
+		}
+
 		config := map[string]string{
-			"configmap-name":  configMapName,
-			"namespace":       configMapNamespace,
-			"daemon-set-name": daemonSetName,
-			"secret-name":     secretName,
+			"configmap-name":    configMapName,
+			"namespace":         configMapNamespace,
+			"daemon-set-name":   daemonSetName,
+			"secret-name":       secretName,
+			"oidc-userinfo-url": oidcUserInfoURL,
 		}
 
 		// Create Authelia user repository with NATS client for storage

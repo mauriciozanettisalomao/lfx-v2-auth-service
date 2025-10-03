@@ -6,6 +6,7 @@ package authelia
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
@@ -13,18 +14,54 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
-// userWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
-type userWriter struct {
-	sync         *sync
-	storage      internalStorageReaderWriter
-	orchestrator internalOrchestrator
+// userReaderWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
+type userReaderWriter struct {
+	oidcUserInfoURL string
+	sync            *sync
+	storage         internalStorageReaderWriter
+	orchestrator    internalOrchestrator
+	httpClient      *httpclient.Client
+}
+
+// fetchOIDCUserInfo fetches user information from the OIDC userinfo endpoint
+func (a *userReaderWriter) fetchOIDCUserInfo(ctx context.Context, token string) (*OIDCUserInfo, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.NewValidation("token is required")
+	}
+
+	if strings.TrimSpace(a.oidcUserInfoURL) == "" {
+		return nil, errors.NewValidation("OIDC userinfo URL is not configured")
+	}
+
+	// Create API request using the standard pattern
+	apiRequest := httpclient.NewAPIRequest(
+		a.httpClient,
+		httpclient.WithMethod(http.MethodGet),
+		httpclient.WithURL(a.oidcUserInfoURL),
+		httpclient.WithToken(token),
+		httpclient.WithDescription("fetch OIDC userinfo"),
+	)
+
+	var userInfo OIDCUserInfo
+	statusCode, err := apiRequest.Call(ctx, &userInfo)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to fetch OIDC userinfo",
+			"error", err,
+			"status_code", statusCode,
+			"url", a.oidcUserInfoURL,
+		)
+		return nil, errors.NewUnexpected("failed to fetch OIDC userinfo", err)
+	}
+
+	return &userInfo, nil
 }
 
 // SearchUser searches for a user in storage
-func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
+func (a *userReaderWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 
 	if user == nil {
 		return nil, errors.NewValidation("user is required")
@@ -69,22 +106,59 @@ func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria 
 }
 
 // GetUser retrieves a user from storage
-func (a *userWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
-	return nil, errors.NewUnexpected("not implemented")
-}
+func (a *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
 
-// UpdateUser updates a user only in storage with patch-like behavior, updating only changed fields
-func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 	if user == nil {
 		return nil, errors.NewValidation("user is required")
 	}
 
-	if user.Username == "" {
-		return nil, errors.NewValidation("username is required")
+	key := user.Sub
+	if key == "" {
+		key = user.Username
 	}
 
-	// TODO: Get the 'sub' from the /api/oidc/userinfo and persist it in the user
-	// It requires the token to be validated with the userinfo endpoint
+	existingUser, err := a.storage.GetUser(ctx, key)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get existing user from storage",
+			"error", err,
+			"key", key,
+		)
+		return nil, err
+	}
+	return existingUser.User, nil
+}
+
+// UpdateUser updates a user only in storage with patch-like behavior, updating only changed fields
+func (a *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+	if user == nil {
+		return nil, errors.NewValidation("user is required")
+	}
+
+	if user.Token != "" {
+		// Fetch user information from OIDC userinfo endpoint
+		userInfo, err := a.fetchOIDCUserInfo(ctx, user.Token)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to fetch OIDC userinfo, skipping sub update",
+				"username", user.Username,
+				"error", err,
+			)
+		}
+		if userInfo != nil && userInfo.Sub != "" {
+			user.Sub = userInfo.Sub
+			slog.DebugContext(ctx, "updated user sub from OIDC userinfo",
+				"username", user.Username,
+				"preferred_username", userInfo.PreferredUsername,
+				"sub", userInfo.Sub,
+			)
+			if user.Username == "" {
+				user.Username = userInfo.PreferredUsername
+			}
+		}
+	}
+
+	if user.Sub == "" && user.Username == "" {
+		return nil, errors.NewValidation("username or sub is required")
+	}
 
 	// First, get the existing user from storage to preserve Authelia-specific fields
 	existingAutheliaUser := &AutheliaUser{}
@@ -100,24 +174,36 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 		return nil, errors.NewUnexpected("failed to get existing user from storage", err)
 	}
 
+	// Update Sub field if provided from OIDC userinfo
+	subUpdated := false
+	if user.Sub != "" && existingUser.Sub != user.Sub {
+		existingUser.Sub = user.Sub
+		subUpdated = true
+		slog.InfoContext(ctx, "updated user sub field in storage",
+			"username", user.Username,
+			"sub", redaction.Redact(user.Sub),
+		)
+	}
+
 	// Update UserMetadata if provided - patch individual metadata fields
+	metadataUpdated := false
 	if user.UserMetadata != nil {
 		if existingUser.UserMetadata == nil {
 			existingUser.UserMetadata = &model.UserMetadata{}
 		}
+		metadataUpdated = existingUser.UserMetadata.Patch(user.UserMetadata)
+	}
 
-		metadataUpdated := existingUser.UserMetadata.Patch(user.UserMetadata)
-		if metadataUpdated {
-			_, err = a.storage.SetUser(ctx, existingUser)
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to update user in storage",
-					"username", user.Username,
-					"error", err,
-				)
-				return nil, errors.NewUnexpected("failed to update user in storage", err)
-			}
+	// Save to storage if any updates were made
+	if subUpdated || metadataUpdated {
+		_, err = a.storage.SetUser(ctx, existingUser)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to update user in storage",
+				"username", user.Username,
+				"error", err,
+			)
+			return nil, errors.NewUnexpected("failed to update user in storage", err)
 		}
-
 	}
 
 	slog.InfoContext(ctx, "user updated successfully in storage",
@@ -130,8 +216,10 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 func NewUserReaderWriter(ctx context.Context, config map[string]string, natsClient *nats.NATSClient) (port.UserReaderWriter, error) {
 	// Set defaults in case of not set
 
-	u := &userWriter{
-		sync: &sync{},
+	u := &userReaderWriter{
+		sync:            &sync{},
+		oidcUserInfoURL: config["oidc-userinfo-url"],
+		httpClient:      httpclient.NewClient(httpclient.DefaultConfig()),
 	}
 
 	// Initialize storage using NATS KV store
