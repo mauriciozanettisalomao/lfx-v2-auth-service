@@ -9,6 +9,17 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 )
 
+// OIDCUserInfo represents the response from the OIDC userinfo endpoint
+type OIDCUserInfo struct {
+	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
+	Name              string `json:"name"`
+	PreferredUsername string `json:"preferred_username"`
+	Rat               int64  `json:"rat"`
+	Sub               string `json:"sub"`
+	UpdatedAt         int64  `json:"updated_at"`
+}
+
 // AutheliaUser wraps model.User with Authelia-specific fields
 type AutheliaUser struct {
 	*model.User
@@ -29,6 +40,7 @@ type AutheliaUser struct {
 // This struct excludes sensitive fields like token, user_id, and primary_email
 type AutheliaUserStorage struct {
 	Username     string              `json:"username"`
+	Sub          string              `json:"sub"`                     // sub for Authelia
 	Email        string              `json:"email"`                   // email for Authelia
 	DisplayName  string              `json:"displayname"`             // display name for Authelia
 	UserMetadata *model.UserMetadata `json:"user_metadata,omitempty"` // user metadata from domain model
@@ -58,6 +70,7 @@ func (a *AutheliaUser) ToStorage() *AutheliaUserStorage {
 
 	return &AutheliaUserStorage{
 		Username:     username,
+		Sub:          a.Sub,
 		Email:        a.Email,
 		DisplayName:  a.DisplayName,
 		UserMetadata: userMetadata,
@@ -73,6 +86,7 @@ func (a *AutheliaUser) FromStorage(storage *AutheliaUserStorage) {
 	}
 	a.Username = storage.Username
 	a.UserMetadata = storage.UserMetadata
+	a.Sub = storage.Sub
 	a.Email = storage.Email
 	a.DisplayName = storage.DisplayName
 	a.CreatedAt = storage.CreatedAt

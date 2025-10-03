@@ -102,6 +102,15 @@ func (u User) BuildEmailIndexKey(ctx context.Context) string {
 	return u.buildIndexKey(ctx, "email", data)
 }
 
+// BuildSubIndexKey builds the index key for the sub
+func (u User) BuildSubIndexKey(ctx context.Context) string {
+	data := strings.TrimSpace(strings.ToLower(u.Sub))
+	if data == "" {
+		return ""
+	}
+	return u.buildIndexKey(ctx, "sub", data)
+}
+
 // sanitize sanitizes the user metadata by cleaning up string fields
 func (um *UserMetadata) userMetadataSanitize() {
 	if um.Name != nil {

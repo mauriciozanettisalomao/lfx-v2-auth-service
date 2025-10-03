@@ -143,6 +143,12 @@ func (n *natsUserStorage) SetUser(ctx context.Context, user *AutheliaUser) (any,
 			return nil, errs.NewUnexpected("failed to set lookup key in NATS KV", errPutLookup)
 		}
 	}
+	if user.Sub != "" {
+		_, errPutLookup := n.kvStore.Put(ctx, n.BuildLookupKey(ctx, "sub", user.BuildSubIndexKey(ctx)), []byte(user.Username))
+		if errPutLookup != nil {
+			return nil, errs.NewUnexpected("failed to set lookup key in NATS KV", errPutLookup)
+		}
+	}
 
 	return user, nil
 }

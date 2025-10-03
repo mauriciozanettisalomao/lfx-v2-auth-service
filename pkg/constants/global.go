@@ -33,6 +33,9 @@ const (
 	// AutheliaSecretNameEnvKey is the environment variable key for the Secret name
 	AutheliaSecretNameEnvKey = "AUTHELIA_SECRET_NAME"
 
+	// AutheliaOIDCUserInfoURLEnvKey is the environment variable key for the OIDC userinfo URL
+	AutheliaOIDCUserInfoURLEnvKey = "AUTHELIA_OIDC_USERINFO_URL"
+
 	// Auth0 Management API configuration
 	// Auth0TenantEnvKey is the environment variable key for the Auth0 tenant
 	Auth0TenantEnvKey = "AUTH0_TENANT"
