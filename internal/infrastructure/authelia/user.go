@@ -18,8 +18,8 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
-// userWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
-type userWriter struct {
+// userReaderWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
+type userReaderWriter struct {
 	oidcUserInfoURL string
 	sync            *sync
 	storage         internalStorageReaderWriter
@@ -28,7 +28,7 @@ type userWriter struct {
 }
 
 // fetchOIDCUserInfo fetches user information from the OIDC userinfo endpoint
-func (a *userWriter) fetchOIDCUserInfo(ctx context.Context, token string) (*OIDCUserInfo, error) {
+func (a *userReaderWriter) fetchOIDCUserInfo(ctx context.Context, token string) (*OIDCUserInfo, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.NewValidation("token is required")
 	}
@@ -61,7 +61,7 @@ func (a *userWriter) fetchOIDCUserInfo(ctx context.Context, token string) (*OIDC
 }
 
 // SearchUser searches for a user in storage
-func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
+func (a *userReaderWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 
 	if user == nil {
 		return nil, errors.NewValidation("user is required")
@@ -106,12 +106,30 @@ func (a *userWriter) SearchUser(ctx context.Context, user *model.User, criteria 
 }
 
 // GetUser retrieves a user from storage
-func (a *userWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
-	return nil, errors.NewUnexpected("not implemented")
+func (a *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
+
+	if user == nil {
+		return nil, errors.NewValidation("user is required")
+	}
+
+	key := user.Sub
+	if key == "" {
+		key = user.Username
+	}
+
+	existingUser, err := a.storage.GetUser(ctx, key)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get existing user from storage",
+			"error", err,
+			"key", key,
+		)
+		return nil, err
+	}
+	return existingUser.User, nil
 }
 
 // UpdateUser updates a user only in storage with patch-like behavior, updating only changed fields
-func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+func (a *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 	if user == nil {
 		return nil, errors.NewValidation("user is required")
 	}
@@ -141,9 +159,6 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	if user.Sub == "" && user.Username == "" {
 		return nil, errors.NewValidation("username or sub is required")
 	}
-
-	// TODO: Get the 'sub' from the /api/oidc/userinfo and persist it in the user
-	// It requires the token to be validated with the userinfo endpoint
 
 	// First, get the existing user from storage to preserve Authelia-specific fields
 	existingAutheliaUser := &AutheliaUser{}
@@ -201,7 +216,7 @@ func (a *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 func NewUserReaderWriter(ctx context.Context, config map[string]string, natsClient *nats.NATSClient) (port.UserReaderWriter, error) {
 	// Set defaults in case of not set
 
-	u := &userWriter{
+	u := &userReaderWriter{
 		sync:            &sync{},
 		oidcUserInfoURL: config["oidc-userinfo-url"],
 		httpClient:      httpclient.NewClient(httpclient.DefaultConfig()),

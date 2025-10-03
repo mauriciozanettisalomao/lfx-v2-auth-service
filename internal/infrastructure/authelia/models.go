@@ -86,7 +86,7 @@ func (a *AutheliaUser) FromStorage(storage *AutheliaUserStorage) {
 	}
 	a.Username = storage.Username
 	a.UserMetadata = storage.UserMetadata
-	a.Sub = storage.Sub
+	a.UserID = storage.Sub
 	a.Email = storage.Email
 	a.DisplayName = storage.DisplayName
 	a.CreatedAt = storage.CreatedAt

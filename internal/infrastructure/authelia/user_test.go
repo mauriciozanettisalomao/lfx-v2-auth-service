@@ -43,7 +43,7 @@ func TestUserWriter_UpdateUser_MetadataPatchBehavior(t *testing.T) {
 		},
 	}
 
-	userWriter := &userWriter{
+	userWriter := &userReaderWriter{
 		storage: mockStorage,
 	}
 
