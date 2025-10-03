@@ -802,6 +802,244 @@ func TestUser_BuildEmailIndexKey(t *testing.T) {
 	}
 }
 
+func TestUser_BuildSubIndexKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		sub      string
+		expected string
+	}{
+		{
+			name:     "valid sub",
+			sub:      "auth0|123456789",
+			expected: "", // Will be calculated
+		},
+		{
+			name:     "empty sub",
+			sub:      "",
+			expected: "",
+		},
+		{
+			name:     "sub with whitespace",
+			sub:      "  auth0|123456789  ",
+			expected: "", // Will be calculated (should be trimmed)
+		},
+		{
+			name:     "sub with uppercase",
+			sub:      "AUTH0|123456789",
+			expected: "", // Will be calculated (should be lowercase)
+		},
+		{
+			name:     "sub with mixed case and whitespace",
+			sub:      "  Auth0|123456789  ",
+			expected: "", // Will be calculated (should be trimmed and lowercase)
+		},
+		{
+			name:     "only whitespace",
+			sub:      "   ",
+			expected: "",
+		},
+		{
+			name:     "google oauth sub",
+			sub:      "google-oauth2|123456789012345678901",
+			expected: "", // Will be calculated
+		},
+		{
+			name:     "github oauth sub",
+			sub:      "github|12345678",
+			expected: "", // Will be calculated
+		},
+		{
+			name:     "sub with special characters",
+			sub:      "provider|user@domain.com",
+			expected: "", // Will be calculated
+		},
+		{
+			name:     "long sub string",
+			sub:      "provider|" + strings.Repeat("a", 100),
+			expected: "", // Will be calculated
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := User{Sub: tt.sub}
+			ctx := context.Background()
+
+			result := user.BuildSubIndexKey(ctx)
+
+			// Calculate expected hash
+			var expectedHash string
+			if tt.expected != "" {
+				expectedHash = tt.expected
+			} else {
+				// Check if this is a case where we expect empty string explicitly
+				normalizedSub := strings.TrimSpace(strings.ToLower(tt.sub))
+				if normalizedSub == "" {
+					expectedHash = "" // Empty subs should return empty string
+				} else {
+					hash := sha256.Sum256([]byte(normalizedSub))
+					expectedHash = hex.EncodeToString(hash[:])
+				}
+			}
+
+			if result != expectedHash {
+				t.Errorf("BuildSubIndexKey() = %q, want %q", result, expectedHash)
+			}
+
+			// Verify it's valid hex if not empty
+			if result != "" {
+				if _, err := hex.DecodeString(result); err != nil {
+					t.Errorf("BuildSubIndexKey() result is not valid hex: %v", err)
+				}
+				// Verify the result is a valid hex string of correct length (64 chars for SHA256)
+				if len(result) != 64 {
+					t.Errorf("BuildSubIndexKey() result length = %d, want 64", len(result))
+				}
+			}
+		})
+	}
+}
+
+func TestUser_BuildSubIndexKey_Normalization(t *testing.T) {
+	// Test that normalization works correctly (trimming and lowercase)
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "uppercase to lowercase",
+			input:    "AUTH0|123456789",
+			expected: "auth0|123456789",
+		},
+		{
+			name:     "leading and trailing whitespace",
+			input:    "  auth0|123456789  ",
+			expected: "auth0|123456789",
+		},
+		{
+			name:     "mixed case with whitespace",
+			input:    "  Auth0|User123  ",
+			expected: "auth0|user123",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			user1 := User{Sub: tc.input}
+			user2 := User{Sub: tc.expected}
+			ctx := context.Background()
+
+			result1 := user1.BuildSubIndexKey(ctx)
+			result2 := user2.BuildSubIndexKey(ctx)
+
+			if result1 != result2 {
+				t.Errorf("BuildSubIndexKey() normalization failed: input %q gave %q, expected %q gave %q",
+					tc.input, result1, tc.expected, result2)
+			}
+
+			// Verify the normalized result matches expected hash
+			hash := sha256.Sum256([]byte(tc.expected))
+			expectedHash := hex.EncodeToString(hash[:])
+
+			if result1 != expectedHash {
+				t.Errorf("BuildSubIndexKey() = %q, want %q for normalized input", result1, expectedHash)
+			}
+		})
+	}
+}
+
+func TestUser_BuildSubIndexKey_Consistency(t *testing.T) {
+	// Test that the same input always produces the same output
+	user := User{Sub: "auth0|123456789"}
+	ctx := context.Background()
+
+	result1 := user.BuildSubIndexKey(ctx)
+	result2 := user.BuildSubIndexKey(ctx)
+
+	if result1 != result2 {
+		t.Errorf("BuildSubIndexKey() not consistent: first=%q, second=%q", result1, result2)
+	}
+
+	// Verify it's not empty and is valid hex
+	if result1 == "" {
+		t.Error("BuildSubIndexKey() returned empty string for valid sub")
+	}
+
+	if _, err := hex.DecodeString(result1); err != nil {
+		t.Errorf("BuildSubIndexKey() result is not valid hex: %v", err)
+	}
+
+	if len(result1) != 64 {
+		t.Errorf("BuildSubIndexKey() result length = %d, want 64", len(result1))
+	}
+}
+
+func TestUser_BuildSubIndexKey_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		sub         string
+		expectEmpty bool
+	}{
+		{
+			name:        "nil-like empty string",
+			sub:         "",
+			expectEmpty: true,
+		},
+		{
+			name:        "only spaces",
+			sub:         "   ",
+			expectEmpty: true,
+		},
+		{
+			name:        "only tabs",
+			sub:         "\t\t\t",
+			expectEmpty: true,
+		},
+		{
+			name:        "mixed whitespace",
+			sub:         " \t \n ",
+			expectEmpty: true,
+		},
+		{
+			name:        "single character",
+			sub:         "a",
+			expectEmpty: false,
+		},
+		{
+			name:        "unicode characters",
+			sub:         "provider|用户123",
+			expectEmpty: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := User{Sub: tt.sub}
+			ctx := context.Background()
+
+			result := user.BuildSubIndexKey(ctx)
+
+			if tt.expectEmpty {
+				if result != "" {
+					t.Errorf("BuildSubIndexKey() = %q, expected empty string", result)
+				}
+			} else {
+				if result == "" {
+					t.Error("BuildSubIndexKey() returned empty string, expected non-empty")
+				}
+				// Verify it's valid hex
+				if _, err := hex.DecodeString(result); err != nil {
+					t.Errorf("BuildSubIndexKey() result is not valid hex: %v", err)
+				}
+				if len(result) != 64 {
+					t.Errorf("BuildSubIndexKey() result length = %d, want 64", len(result))
+				}
+			}
+		})
+	}
+}
+
 func TestUser_BuildEmailIndexKey_Normalization(t *testing.T) {
 	// Test that different representations of the same email produce the same hash
 	ctx := context.Background()
