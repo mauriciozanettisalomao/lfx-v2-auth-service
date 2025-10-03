@@ -86,6 +86,8 @@ func (a *AutheliaUser) FromStorage(storage *AutheliaUserStorage) {
 	}
 	a.Username = storage.Username
 	a.UserMetadata = storage.UserMetadata
+	// for consistency in naming across implementations,
+	// we use the unique identifier as the user_id
 	a.UserID = storage.Sub
 	a.Email = storage.Email
 	a.DisplayName = storage.DisplayName
