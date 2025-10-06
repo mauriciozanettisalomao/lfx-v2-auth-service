@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
@@ -202,36 +201,8 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	return &updatedUser, nil
 }
 
-func (u *userWriter) MetadataLookup(ctx context.Context, input string, user *model.User) bool {
-	input = strings.TrimSpace(input)
-
-	// For mock implementation, we'll follow a similar pattern to auth0:
-	// If input contains "|" (typical Auth0 sub format), treat as canonical lookup
-	// Otherwise, treat as search criteria
-	if strings.Contains(input, "|") {
-		// Input contains "|", use as sub for canonical lookup
-		user.Sub = input
-		user.UserID = input    // Use same value for user_id in mock
-		user.Username = ""     // Clear username field
-		user.PrimaryEmail = "" // Clear email field for canonical lookup
-		return true
-	}
-
-	// Input doesn't contain "|", use for search query
-	// Clear canonical fields and set search field based on input format
-	user.Sub = ""
-	user.UserID = ""
-
-	// If input looks like an email, set PrimaryEmail, otherwise set Username
-	if strings.Contains(input, "@") {
-		user.PrimaryEmail = input
-		user.Username = ""
-	} else {
-		user.Username = input
-		user.PrimaryEmail = ""
-	}
-
-	return false
+func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
+	return nil, nil
 }
 
 // NewUserReaderWriter creates a new mock UserReaderWriter with YAML file as the data source

@@ -119,40 +119,28 @@ func (m *messageHandlerOrchestrator) GetUserMetadata(ctx context.Context, msg po
 		"input", redaction.Redact(input),
 	)
 
-	user := &model.User{}
-	useCanonicalLookup := m.userReader.MetadataLookup(ctx, input, user)
-
-	var (
-		retrievedUser *model.User
-		err           error
-	)
-
-	lookup := func() (*model.User, error) {
-		if useCanonicalLookup {
-			slog.DebugContext(ctx, "using canonical lookup for user metadata",
-				"sub", redaction.Redact(user.Sub),
-			)
-			return m.userReader.GetUser(ctx, user)
-		}
-		slog.DebugContext(ctx, "using search lookup for user metadata",
-			"username", redaction.Redact(user.Username),
+	user, errMetadataLookup := m.userReader.MetadataLookup(ctx, input)
+	if errMetadataLookup != nil {
+		slog.ErrorContext(ctx, "error getting user metadata",
+			"error", errMetadataLookup,
+			"input", redaction.Redact(input),
 		)
-		return m.userReader.SearchUser(ctx, user, constants.CriteriaTypeUsername)
+		return m.errorResponse(errMetadataLookup.Error()), nil
 	}
 
-	retrievedUser, err = lookup()
-	if err != nil {
-		slog.ErrorContext(ctx, "error getting user metadata", "error", err,
+	userRetrieved, errGetUser := m.userReader.GetUser(ctx, user)
+	if errGetUser != nil {
+		slog.ErrorContext(ctx, "error getting user metadata",
+			"error", errGetUser,
 			"input", redaction.Redact(input),
-			"useCanonicalLookup", useCanonicalLookup,
 		)
-		return m.errorResponse(err.Error()), nil
+		return m.errorResponse(errGetUser.Error()), nil
 	}
 
 	// Return success response with user metadata
 	response := UserDataResponse{
 		Success: true,
-		Data:    retrievedUser.UserMetadata,
+		Data:    userRetrieved.UserMetadata,
 	}
 
 	responseJSON, err := json.Marshal(response)

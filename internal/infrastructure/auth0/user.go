@@ -293,21 +293,10 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 // MetadataLookup prepares the user for metadata lookup based on the input
 // Returns true if should use canonical lookup, false if should use search
-func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string, user *model.User) bool {
-	input = strings.TrimSpace(input)
-
-	if strings.Contains(input, "|") {
-		// Input contains "|", use as sub for canonical lookup
-		user.Sub = input
-		user.UserID = input // Auth0 uses user_id for the canonical lookup
-		user.Username = ""  // Clear username field
-		return true
-	}
-	// Input doesn't contain "|", use for search query
-	user.Sub = ""    // Clear sub field
-	user.UserID = "" // Clear user_id field
-	user.Username = input
-	return false
+func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
+	// TODO: Implement
+	// breaking change, we'll address this in a future PR
+	return nil, nil
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {

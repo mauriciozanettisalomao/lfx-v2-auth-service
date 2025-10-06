@@ -25,6 +25,46 @@ func NewValidation(message string, err ...error) Validation {
 	}
 }
 
+// Unauthorized represents an unauthorized error in the application.
+type Unauthorized struct {
+	base
+}
+
+// Error returns the error message for Unauthorized.
+func (u Unauthorized) Error() string {
+	return u.error()
+}
+
+// NewUnauthorized creates a new Unauthorized error with the provided message.
+func NewUnauthorized(message string, err ...error) Unauthorized {
+	return Unauthorized{
+		base: base{
+			message: message,
+			err:     errors.Join(err...),
+		},
+	}
+}
+
+// Forbidden represents a forbidden error in the application.
+type Forbidden struct {
+	base
+}
+
+// Error returns the error message for Forbidden.
+func (f Forbidden) Error() string {
+	return f.error()
+}
+
+// NewForbidden creates a new Forbidden error with the provided message.
+func NewForbidden(message string, err ...error) Forbidden {
+	return Forbidden{
+		base: base{
+			message: message,
+			err:     errors.Join(err...),
+		},
+	}
+}
+
 // NotFound represents a not found error in the application.
 type NotFound struct {
 	base
