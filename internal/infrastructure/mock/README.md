@@ -10,7 +10,7 @@ The mock user system provides a simple in-memory storage solution for user data 
 
 - **In-memory storage**: Fast, stateful mock operations during runtime
 - **YAML data source**: Embedded YAML file with five predefined users for consistent testing
-- **Dual-key lookup**: Users can be found by either username or primary email
+- **JWT token support**: Parses JWT tokens and extracts the `sub` claim for user identification
 - **PATCH-style updates**: Only non-empty/non-nil fields are updated
 - **Comprehensive logging**: Detailed logging for debugging and monitoring
 
@@ -38,6 +38,58 @@ The system includes five users defined in the YAML file:
 - **Role**: Full Stack Wizard at Mythical Development Co
 - **Location**: San Francisco, USA
 - **Timezone**: America/Los_Angeles
+
+## JWT Token Support
+
+The mock implementation supports JWT (JSON Web Token) parsing to extract user identification information. When a JWT token is provided as input, the system automatically extracts the `sub` (subject) claim and uses it for user lookups.
+
+### JWT Token Generation
+
+For testing purposes, you can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
+
+1. Go to [https://www.jwt.io](https://www.jwt.io)
+2. Navigate to the **JWT Encoder** tab
+3. Use the following configuration:
+
+**Header:**
+```json
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+**Payload:**
+```json
+{
+  "sub": "auth0|zephyr001",
+  "name": "Zephyr Stormwind",
+  "admin": true,
+  "iat": 1516239022
+}
+```
+
+**Secret:**
+```
+a-string-secret-at-least-256-bits-long
+```
+
+### JWT Processing Flow
+
+1. **Token Detection**: The system detects JWT tokens by checking if the input starts with `"eyJ"` (standard JWT header)
+2. **Parsing**: Uses `github.com/golang-jwt/jwt/v5` to parse the token without signature verification
+3. **Sub Extraction**: Extracts the `sub` claim from the token payload
+4. **Lookup Strategy**: Uses the extracted `sub` value to determine the appropriate lookup strategy:
+   - If `sub` contains `|` → Canonical lookup (direct user ID match)
+   - If `sub` contains `@` → Email search
+   - Otherwise → Username search
+5. **Fallback**: If JWT parsing fails, treats the input as a regular string
+
+### Important Notes
+
+- **No Signature Validation**: For simplicity in the mock environment, JWT signature validation is **not** performed. This avoids overcomplicating the development flow while still providing realistic JWT parsing behavior.
+- **Development Only**: This JWT parsing is intended for development and testing purposes only. Production implementations should include proper signature validation.
+- **Flexible Input**: The system gracefully handles both JWT tokens and regular string inputs (usernames, emails, user IDs).
 
 ## Data Source
 
@@ -87,6 +139,7 @@ internal/infrastructure/mock/
 The mock system is perfect for:
 - Unit tests requiring predictable user data
 - Integration tests needing consistent user scenarios
+- JWT token parsing and validation testing
 - Development environments where real Auth0 integration isn't needed
 - Demo environments requiring realistic but fake user profiles
 

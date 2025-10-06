@@ -49,7 +49,7 @@ func (m *mockUserServiceWriter) UpdateUser(ctx context.Context, user *model.User
 type mockUserServiceReader struct {
 	getUserFunc        func(ctx context.Context, user *model.User) (*model.User, error)
 	searchUserFunc     func(ctx context.Context, user *model.User, criteria string) (*model.User, error)
-	metadataLookupFunc func(ctx context.Context, input string, user *model.User) bool
+	metadataLookupFunc func(ctx context.Context, input string) (*model.User, error)
 }
 
 func (m *mockUserServiceReader) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -66,27 +66,28 @@ func (m *mockUserServiceReader) SearchUser(ctx context.Context, user *model.User
 	return user, nil
 }
 
-func (m *mockUserServiceReader) MetadataLookup(ctx context.Context, input string, user *model.User) bool {
+func (m *mockUserServiceReader) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
 	if m.metadataLookupFunc != nil {
-		return m.metadataLookupFunc(ctx, input, user)
+		return m.metadataLookupFunc(ctx, input)
 	}
 
 	// Default implementation: follow the same logic as the real implementations
 	input = strings.TrimSpace(input)
+	user := &model.User{}
 
 	if strings.Contains(input, "|") {
 		// Input contains "|", use as sub for canonical lookup
 		user.Sub = input
 		user.UserID = input
 		user.Username = ""
-		return true
+	} else {
+		// Input doesn't contain "|", use for search query
+		user.Username = input
+		user.Sub = ""
+		user.UserID = ""
 	}
 
-	// Input doesn't contain "|", use for search query
-	user.Username = input
-	user.Sub = ""
-	user.UserID = ""
-	return false
+	return user, nil
 }
 
 func TestMessageHandlerOrchestrator_UpdateUser(t *testing.T) {
@@ -882,17 +883,28 @@ func TestMessageHandlerOrchestrator_Integration(t *testing.T) {
 
 func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		mockGetUser    func(ctx context.Context, user *model.User) (*model.User, error)
-		mockSearchUser func(ctx context.Context, user *model.User, criteria string) (*model.User, error)
-		expectedError  bool
-		expectedData   *model.UserMetadata
-		description    string
+		name               string
+		input              string
+		mockMetadataLookup func(ctx context.Context, input string) (*model.User, error)
+		mockGetUser        func(ctx context.Context, user *model.User) (*model.User, error)
+		expectedError      bool
+		expectedData       *model.UserMetadata
+		description        string
 	}{
 		{
 			name:  "canonical lookup success",
 			input: "auth0|123456789",
+			mockMetadataLookup: func(ctx context.Context, input string) (*model.User, error) {
+				// Verify input is correct
+				if input != "auth0|123456789" {
+					t.Errorf("Expected input 'auth0|123456789', got %q", input)
+				}
+				// Return user prepared for canonical lookup
+				return &model.User{
+					Sub:    "auth0|123456789",
+					UserID: "auth0|123456789",
+				}, nil
+			},
 			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
 				// Verify the user was prepared correctly for canonical lookup
 				if user.Sub != "auth0|123456789" || user.UserID != "auth0|123456789" {
@@ -917,14 +929,20 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 		{
 			name:  "search lookup success",
 			input: "john.doe",
-			mockSearchUser: func(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
+			mockMetadataLookup: func(ctx context.Context, input string) (*model.User, error) {
+				// Verify input is correct
+				if input != "john.doe" {
+					t.Errorf("Expected input 'john.doe', got %q", input)
+				}
+				// Return user prepared for search lookup (no | in input)
+				return &model.User{
+					Username: "john.doe",
+				}, nil
+			},
+			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
 				// Verify the user was prepared correctly for search lookup
 				if user.Username != "john.doe" {
 					t.Errorf("User not prepared correctly for search lookup: Username=%q", user.Username)
-				}
-				// Verify the criteria is correct
-				if criteria != constants.CriteriaTypeUsername {
-					t.Errorf("Wrong criteria passed: got %q, expected %q", criteria, constants.CriteriaTypeUsername)
 				}
 				return &model.User{
 					UserID:   "auth0|987654321",
@@ -940,11 +958,17 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 				Name:         converters.StringPtr("John Doe"),
 				Organization: converters.StringPtr("Example Corp"),
 			},
-			description: "Should use SearchUser for search lookup and return user metadata",
+			description: "Should use GetUser for search lookup and return user metadata",
 		},
 		{
 			name:  "canonical lookup user not found",
 			input: "auth0|nonexistent",
+			mockMetadataLookup: func(ctx context.Context, input string) (*model.User, error) {
+				return &model.User{
+					Sub:    "auth0|nonexistent",
+					UserID: "auth0|nonexistent",
+				}, nil
+			},
 			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
 				return nil, errors.NewNotFound("user not found")
 			},
@@ -955,7 +979,12 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 		{
 			name:  "search lookup user not found",
 			input: "nonexistent.user",
-			mockSearchUser: func(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
+			mockMetadataLookup: func(ctx context.Context, input string) (*model.User, error) {
+				return &model.User{
+					Username: "nonexistent.user",
+				}, nil
+			},
+			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
 				return nil, errors.NewNotFound("user not found by criteria")
 			},
 			expectedError: true,
@@ -979,6 +1008,12 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 		{
 			name:  "canonical lookup with nil metadata",
 			input: "auth0|123456789",
+			mockMetadataLookup: func(ctx context.Context, input string) (*model.User, error) {
+				return &model.User{
+					Sub:    "auth0|123456789",
+					UserID: "auth0|123456789",
+				}, nil
+			},
 			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
 				return &model.User{
 					UserID:       "auth0|123456789",
@@ -996,8 +1031,8 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock user reader
 			mockReader := &mockUserServiceReader{
-				getUserFunc:    tt.mockGetUser,
-				searchUserFunc: tt.mockSearchUser,
+				getUserFunc:        tt.mockGetUser,
+				metadataLookupFunc: tt.mockMetadataLookup,
 			}
 
 			// Create message handler orchestrator

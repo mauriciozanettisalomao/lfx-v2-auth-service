@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // TestUserReaderWriter_MetadataLookup tests the MetadataLookup method for Mock implementation
@@ -18,230 +18,288 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 	tests := []struct {
 		name                 string
 		input                string
-		expectedCanonical    bool
 		expectedSub          string
 		expectedUserID       string
 		expectedUsername     string
 		expectedPrimaryEmail string
+		expectError          bool
+		errorMessage         string
 	}{
+		// JWT test cases
 		{
-			name:                 "canonical lookup with pipe separator - auth0 format",
-			input:                "auth0|123456789",
-			expectedCanonical:    true,
+			name:                 "JWT token with auth0 sub",
+			input:                createTestJWT(t, "auth0|123456789"),
 			expectedSub:          "auth0|123456789",
 			expectedUserID:       "auth0|123456789",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
-			name:                 "canonical lookup with google oauth format",
-			input:                "google-oauth2|987654321",
-			expectedCanonical:    true,
+			name:                 "JWT token with google oauth sub",
+			input:                createTestJWT(t, "google-oauth2|987654321"),
 			expectedSub:          "google-oauth2|987654321",
 			expectedUserID:       "google-oauth2|987654321",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
-			name:                 "canonical lookup with github oauth format",
-			input:                "github|456789123",
-			expectedCanonical:    true,
+			name:                 "JWT token with github sub",
+			input:                createTestJWT(t, "github|456789123"),
 			expectedSub:          "github|456789123",
 			expectedUserID:       "github|456789123",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
-			name:                 "canonical lookup with saml enterprise format",
-			input:                "samlp|enterprise|user123",
-			expectedCanonical:    true,
-			expectedSub:          "samlp|enterprise|user123",
-			expectedUserID:       "samlp|enterprise|user123",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "canonical lookup with linkedin oauth format",
-			input:                "linkedin|789123456",
-			expectedCanonical:    true,
-			expectedSub:          "linkedin|789123456",
-			expectedUserID:       "linkedin|789123456",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "canonical lookup with custom provider format",
-			input:                "custom-provider|user-id-12345",
-			expectedCanonical:    true,
-			expectedSub:          "custom-provider|user-id-12345",
-			expectedUserID:       "custom-provider|user-id-12345",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with email format",
-			input:                "john.doe@example.com",
-			expectedCanonical:    false,
+			name:                 "invalid JWT token",
+			input:                "eyJinvalid.jwt.token",
 			expectedSub:          "",
 			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "john.doe@example.com",
-		},
-		{
-			name:                 "search lookup with email format - complex domain",
-			input:                "jane.smith@company.co.uk",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "jane.smith@company.co.uk",
-		},
-		{
-			name:                 "search lookup with email format - subdomain",
-			input:                "developer@mail.example.org",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "developer@mail.example.org",
-		},
-		{
-			name:                 "search lookup with username - no email format",
-			input:                "john.doe",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "john.doe",
+			expectedUsername:     "eyJinvalid.jwt.token",
 			expectedPrimaryEmail: "",
+			expectError:          false, // Should fall back to username lookup
 		},
+		// Regular test cases
 		{
-			name:                 "search lookup with username containing numbers",
-			input:                "developer123",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "developer123",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username containing special chars",
-			input:                "jane_smith-dev",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "jane_smith-dev",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with simple username",
-			input:                "testuser",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "testuser",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "empty input",
-			input:                "",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "whitespace only input",
-			input:                "   ",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "input with leading/trailing whitespace - canonical",
-			input:                "  auth0|123456789  ",
-			expectedCanonical:    true,
+			name:                 "canonical lookup with pipe separator - auth0 format",
+			input:                "auth0|123456789",
 			expectedSub:          "auth0|123456789",
 			expectedUserID:       "auth0|123456789",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
-			name:                 "input with leading/trailing whitespace - email",
-			input:                "  john.doe@example.com  ",
-			expectedCanonical:    false,
+			name:                 "canonical lookup with google oauth format",
+			input:                "google-oauth2|987654321",
+			expectedSub:          "google-oauth2|987654321",
+			expectedUserID:       "google-oauth2|987654321",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "canonical lookup with github oauth format",
+			input:                "github|456789123",
+			expectedSub:          "github|456789123",
+			expectedUserID:       "github|456789123",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "canonical lookup with saml enterprise format",
+			input:                "samlp|enterprise|user123",
+			expectedSub:          "samlp|enterprise|user123",
+			expectedUserID:       "samlp|enterprise|user123",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "canonical lookup with linkedin oauth format",
+			input:                "linkedin|789123456",
+			expectedSub:          "linkedin|789123456",
+			expectedUserID:       "linkedin|789123456",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "canonical lookup with custom provider format",
+			input:                "custom-provider|user-id-12345",
+			expectedSub:          "custom-provider|user-id-12345",
+			expectedUserID:       "custom-provider|user-id-12345",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with email format",
+			input:                "john.doe@example.com",
 			expectedSub:          "",
 			expectedUserID:       "",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "john.doe@example.com",
+			expectError:          false,
 		},
 		{
-			name:                 "input with leading/trailing whitespace - username",
-			input:                "  john.doe  ",
-			expectedCanonical:    false,
+			name:                 "search lookup with email format - complex domain",
+			input:                "jane.smith@company.co.uk",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "jane.smith@company.co.uk",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with email format - subdomain",
+			input:                "developer@mail.example.org",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "developer@mail.example.org",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with username - no email format",
+			input:                "john.doe",
 			expectedSub:          "",
 			expectedUserID:       "",
 			expectedUsername:     "john.doe",
 			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with username containing numbers",
+			input:                "developer123",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "developer123",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with username containing special chars",
+			input:                "jane_smith-dev",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "jane_smith-dev",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "search lookup with simple username",
+			input:                "testuser",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "testuser",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "empty input",
+			input:                "",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          true,
+			errorMessage:         "input is required",
+		},
+		{
+			name:                 "whitespace only input",
+			input:                "   ",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          true,
+			errorMessage:         "input is required",
+		},
+		{
+			name:                 "input with leading/trailing whitespace - canonical",
+			input:                "  auth0|123456789  ",
+			expectedSub:          "auth0|123456789",
+			expectedUserID:       "auth0|123456789",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "",
+			expectError:          false,
+		},
+		{
+			name:                 "input with leading/trailing whitespace - email",
+			input:                "  john.doe@example.com  ",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "",
+			expectedPrimaryEmail: "john.doe@example.com",
+			expectError:          false,
+		},
+		{
+			name:                 "input with leading/trailing whitespace - username",
+			input:                "  john.doe  ",
+			expectedSub:          "",
+			expectedUserID:       "",
+			expectedUsername:     "john.doe",
+			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
 			name:                 "edge case - single pipe character",
 			input:                "|",
-			expectedCanonical:    true,
 			expectedSub:          "|",
 			expectedUserID:       "|",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
 			name:                 "edge case - pipe at end",
 			input:                "provider|",
-			expectedCanonical:    true,
 			expectedSub:          "provider|",
 			expectedUserID:       "provider|",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
 			name:                 "edge case - pipe at beginning",
 			input:                "|userid",
-			expectedCanonical:    true,
 			expectedSub:          "|userid",
 			expectedUserID:       "|userid",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
 			name:                 "edge case - multiple pipes",
 			input:                "provider|connection|userid",
-			expectedCanonical:    true,
 			expectedSub:          "provider|connection|userid",
 			expectedUserID:       "provider|connection|userid",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 		{
 			name:                 "edge case - email with pipe (should be canonical)",
 			input:                "user@domain.com|provider",
-			expectedCanonical:    true,
 			expectedSub:          "user@domain.com|provider",
 			expectedUserID:       "user@domain.com|provider",
 			expectedUsername:     "",
 			expectedPrimaryEmail: "",
+			expectError:          false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user := &model.User{}
+			user, err := writer.MetadataLookup(ctx, tt.input)
 
-			isCanonical := writer.MetadataLookup(ctx, tt.input, user)
+			// Check error expectation
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("MetadataLookup() expected error but got none")
+					return
+				}
+				if tt.errorMessage != "" && err.Error() != tt.errorMessage {
+					t.Errorf("MetadataLookup() error = %q, expected %q", err.Error(), tt.errorMessage)
+				}
+				return
+			}
 
-			// Check canonical vs search lookup decision
-			if isCanonical != tt.expectedCanonical {
-				t.Errorf("MetadataLookup() canonical = %v, expected %v", isCanonical, tt.expectedCanonical)
+			// Check no error when not expected
+			if err != nil {
+				t.Errorf("MetadataLookup() unexpected error: %v", err)
+				return
+			}
+
+			// Check user is not nil
+			if user == nil {
+				t.Errorf("MetadataLookup() returned nil user")
+				return
 			}
 
 			// Check user fields are set correctly
@@ -262,4 +320,26 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 			}
 		})
 	}
+}
+
+// createTestJWT creates a test JWT token with the given sub claim
+func createTestJWT(t *testing.T, sub string) string {
+	t.Helper()
+
+	// Create a new token with the sub claim
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": sub,
+		"iss": "test-issuer",
+		"aud": "test-audience",
+		"exp": 9999999999, // Far future expiration
+		"iat": 1000000000, // Past issued at
+	})
+
+	// Sign the token with a test secret (for mock purposes)
+	tokenString, err := token.SignedString([]byte("test-secret"))
+	if err != nil {
+		t.Fatalf("Failed to create test JWT: %v", err)
+	}
+
+	return tokenString
 }

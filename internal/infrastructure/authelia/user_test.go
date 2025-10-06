@@ -81,171 +81,57 @@ func TestUserWriter_UpdateUser_MetadataPatchBehavior(t *testing.T) {
 // TestUserReaderWriter_MetadataLookup tests the MetadataLookup method for Authelia implementation
 func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 	ctx := context.Background()
-	writer := &userReaderWriter{}
 
 	tests := []struct {
-		name                 string
-		input                string
-		expectedCanonical    bool
-		expectedSub          string
-		expectedUserID       string
-		expectedUsername     string
-		expectedPrimaryEmail string
+		name         string
+		input        string
+		expectError  bool
+		errorMessage string
 	}{
 		{
-			name:                 "canonical lookup with valid UUID",
-			input:                "550e8400-e29b-41d4-a716-446655440000",
-			expectedCanonical:    true,
-			expectedSub:          "550e8400-e29b-41d4-a716-446655440000",
-			expectedUserID:       "550e8400-e29b-41d4-a716-446655440000",
-			expectedUsername:     "550e8400-e29b-41d4-a716-446655440000",
-			expectedPrimaryEmail: "",
+			name:         "empty input",
+			input:        "",
+			expectError:  true,
+			errorMessage: "input is required",
 		},
 		{
-			name:                 "canonical lookup with another valid UUID",
-			input:                "123e4567-e89b-12d3-a456-426614174000",
-			expectedCanonical:    true,
-			expectedSub:          "123e4567-e89b-12d3-a456-426614174000",
-			expectedUserID:       "123e4567-e89b-12d3-a456-426614174000",
-			expectedUsername:     "123e4567-e89b-12d3-a456-426614174000",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username - invalid UUID",
-			input:                "john.doe",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "john.doe",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username containing numbers",
-			input:                "developer123",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "developer123",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username containing special chars",
-			input:                "jane_smith-dev",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "jane_smith-dev",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with invalid UUID format",
-			input:                "not-a-valid-uuid-format",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "not-a-valid-uuid-format",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with UUID-like but invalid",
-			input:                "550e8400-e29b-41d4-a716-44665544000g", // Invalid character 'g'
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "550e8400-e29b-41d4-a716-44665544000g",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with short UUID-like string",
-			input:                "550e8400-e29b-41d4-a716", // Too short
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "550e8400-e29b-41d4-a716",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "empty input",
-			input:                "",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "whitespace only input",
-			input:                "   ",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "input with leading/trailing whitespace - valid UUID",
-			input:                "  550e8400-e29b-41d4-a716-446655440000  ",
-			expectedCanonical:    true,
-			expectedSub:          "550e8400-e29b-41d4-a716-446655440000",
-			expectedUserID:       "550e8400-e29b-41d4-a716-446655440000",
-			expectedUsername:     "550e8400-e29b-41d4-a716-446655440000",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "input with leading/trailing whitespace - invalid UUID",
-			input:                "  john.doe  ",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "john.doe",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "uppercase UUID",
-			input:                "550E8400-E29B-41D4-A716-446655440000",
-			expectedCanonical:    true,
-			expectedSub:          "550e8400-e29b-41d4-a716-446655440000", // UUID.String() normalizes to lowercase
-			expectedUserID:       "550e8400-e29b-41d4-a716-446655440000", // UUID.String() normalizes to lowercase
-			expectedUsername:     "550E8400-E29B-41D4-A716-446655440000", // Username preserves original input
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "mixed case UUID",
-			input:                "550e8400-E29B-41d4-A716-446655440000",
-			expectedCanonical:    true,
-			expectedSub:          "550e8400-e29b-41d4-a716-446655440000", // UUID.String() normalizes to lowercase
-			expectedUserID:       "550e8400-e29b-41d4-a716-446655440000", // UUID.String() normalizes to lowercase
-			expectedUsername:     "550e8400-E29B-41d4-A716-446655440000", // Username preserves original input
-			expectedPrimaryEmail: "",
+			name:        "invalid token - should fail OIDC fetch",
+			input:       "invalid-token",
+			expectError: true,
+			// The actual error message will depend on the OIDC configuration
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user := &model.User{}
+			// Create userReaderWriter without OIDC configuration
+			// This will cause fetchOIDCUserInfo to fail, which is expected for most tests
+			writer := &userReaderWriter{}
 
-			isCanonical := writer.MetadataLookup(ctx, tt.input, user)
+			user, err := writer.MetadataLookup(ctx, tt.input)
 
-			// Check canonical vs search lookup decision
-			if isCanonical != tt.expectedCanonical {
-				t.Errorf("MetadataLookup() canonical = %v, expected %v", isCanonical, tt.expectedCanonical)
+			// Check error expectation
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("MetadataLookup() expected error but got none")
+					return
+				}
+				if tt.errorMessage != "" && err.Error() != tt.errorMessage {
+					t.Errorf("MetadataLookup() error = %q, expected %q", err.Error(), tt.errorMessage)
+				}
+				return
 			}
 
-			// Check user fields are set correctly
-			if user.Sub != tt.expectedSub {
-				t.Errorf("MetadataLookup() Sub = %q, expected %q", user.Sub, tt.expectedSub)
+			// Check no error when not expected
+			if err != nil {
+				t.Errorf("MetadataLookup() unexpected error: %v", err)
+				return
 			}
 
-			if user.UserID != tt.expectedUserID {
-				t.Errorf("MetadataLookup() UserID = %q, expected %q", user.UserID, tt.expectedUserID)
-			}
-
-			if user.Username != tt.expectedUsername {
-				t.Errorf("MetadataLookup() Username = %q, expected %q", user.Username, tt.expectedUsername)
-			}
-
-			if user.PrimaryEmail != tt.expectedPrimaryEmail {
-				t.Errorf("MetadataLookup() PrimaryEmail = %q, expected %q", user.PrimaryEmail, tt.expectedPrimaryEmail)
+			// Check user is not nil
+			if user == nil {
+				t.Errorf("MetadataLookup() returned nil user")
+				return
 			}
 		})
 	}

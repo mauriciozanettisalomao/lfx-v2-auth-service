@@ -8,9 +8,12 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -202,7 +205,86 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 }
 
 func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
-	return nil, nil
+	slog.DebugContext(ctx, "mock: metadata lookup", "input", input)
+
+	// Trim whitespace from input
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, errors.NewValidation("input is required")
+	}
+
+	user := &model.User{}
+
+	// First, try to parse as JWT token to extract the sub
+	if strings.HasPrefix(input, "eyJ") { // JWT tokens typically start with "eyJ"
+		sub, err := u.extractSubFromJWT(ctx, input)
+		if err != nil {
+			slog.WarnContext(ctx, "mock: failed to parse JWT, treating as regular input", "error", err)
+			// If JWT parsing fails, fall back to regular input processing
+		} else {
+			// Successfully extracted sub from JWT
+			input = sub
+			slog.InfoContext(ctx, "mock: extracted sub from JWT", "sub", sub)
+		}
+	}
+
+	// Determine lookup strategy based on input format
+	if strings.Contains(input, "|") {
+		// Input contains "|", use as sub for canonical lookup
+		user.Sub = input
+		user.UserID = input
+		user.Username = ""
+		user.PrimaryEmail = ""
+		slog.InfoContext(ctx, "mock: canonical lookup strategy", "sub", input)
+	} else if strings.Contains(input, "@") {
+		// Input looks like an email, use for email search
+		user.PrimaryEmail = strings.ToLower(input) // Normalize email to lowercase
+		user.Sub = ""
+		user.UserID = ""
+		user.Username = ""
+		slog.InfoContext(ctx, "mock: email search strategy", "email", user.PrimaryEmail)
+	} else {
+		// Input doesn't contain "|" or "@", use for username search
+		user.Username = input
+		user.Sub = ""
+		user.UserID = ""
+		user.PrimaryEmail = ""
+		slog.InfoContext(ctx, "mock: username search strategy", "username", input)
+	}
+
+	return user, nil
+}
+
+// extractSubFromJWT extracts the 'sub' claim from a JWT token
+func (u *userWriter) extractSubFromJWT(ctx context.Context, tokenString string) (string, error) {
+	// Parse the token without verification (for mock purposes)
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return "", fmt.Errorf("failed to parse JWT token: %w", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid token claims")
+	}
+
+	// Extract the 'sub' claim
+	sub, exists := claims["sub"]
+	if !exists {
+		return "", fmt.Errorf("sub claim not found in token")
+	}
+
+	subString, ok := sub.(string)
+	if !ok {
+		return "", fmt.Errorf("sub claim is not a string")
+	}
+
+	if subString == "" {
+		return "", fmt.Errorf("sub claim is empty")
+	}
+
+	slog.DebugContext(ctx, "mock: extracted sub from JWT", "sub", subString)
+	return subString, nil
 }
 
 // NewUserReaderWriter creates a new mock UserReaderWriter with YAML file as the data source
