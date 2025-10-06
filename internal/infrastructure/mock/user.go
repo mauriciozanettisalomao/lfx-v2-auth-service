@@ -10,10 +10,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	jwtparser "github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -257,34 +257,14 @@ func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.U
 
 // extractSubFromJWT extracts the 'sub' claim from a JWT token
 func (u *userWriter) extractSubFromJWT(ctx context.Context, tokenString string) (string, error) {
-	// Parse the token without verification (for mock purposes)
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	// Use the JWT utility to extract the subject
+	subject, err := jwtparser.ExtractSubject(ctx, tokenString)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse JWT token: %w", err)
+		return "", err
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", fmt.Errorf("invalid token claims")
-	}
-
-	// Extract the 'sub' claim
-	sub, exists := claims["sub"]
-	if !exists {
-		return "", fmt.Errorf("sub claim not found in token")
-	}
-
-	subString, ok := sub.(string)
-	if !ok {
-		return "", fmt.Errorf("sub claim is not a string")
-	}
-
-	if subString == "" {
-		return "", fmt.Errorf("sub claim is empty")
-	}
-
-	slog.DebugContext(ctx, "mock: extracted sub from JWT", "sub", subString)
-	return subString, nil
+	slog.DebugContext(ctx, "mock: extracted sub from JWT", "sub", subject)
+	return subject, nil
 }
 
 // NewUserReaderWriter creates a new mock UserReaderWriter with YAML file as the data source

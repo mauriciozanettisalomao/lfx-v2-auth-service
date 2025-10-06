@@ -155,7 +155,7 @@ func TestUserReaderWriter_jwtVerify(t *testing.T) {
 				}
 			},
 			wantError: true,
-			errorMsg:  "wrong scope, got",
+			errorMsg:  "missing required scope",
 		},
 		{
 			name: "scope with multiple values including required",
@@ -754,7 +754,7 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "wrong scope",
+			expectedErr: "missing required scope",
 		},
 	}
 
