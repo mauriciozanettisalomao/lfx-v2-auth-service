@@ -39,13 +39,17 @@ The system includes five users defined in the YAML file:
 - **Location**: San Francisco, USA
 - **Timezone**: America/Los_Angeles
 
-## JWT Token Support
+## Token Support
 
-The mock implementation supports JWT (JSON Web Token) parsing to extract user identification information. When a JWT token is provided as input, the system automatically extracts the `sub` (subject) claim and uses it for user lookups.
+The mock implementation supports multiple token types for testing different identity provider scenarios. The system automatically detects the token type and processes it accordingly.
 
-### JWT Token Generation
+### Supported Token Types
 
-For testing purposes, you can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
+#### 1. JWT Tokens (Auth0 Simulation)
+For testing Auth0-like behavior, the system supports JWT token parsing:
+
+**JWT Token Generation:**
+You can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
 
 1. Go to [https://www.jwt.io](https://www.jwt.io)
 2. Navigate to the **JWT Encoder** tab
@@ -74,22 +78,58 @@ For testing purposes, you can generate JWT tokens using the [JWT.io](https://www
 a-string-secret-at-least-256-bits-long
 ```
 
-### JWT Processing Flow
+#### 2. Opaque Tokens (Authelia Simulation)
+For testing Authelia-like behavior, the system supports opaque token mapping:
 
-1. **Token Detection**: The system detects JWT tokens by checking if the input starts with `"eyJ"` (standard JWT header)
-2. **Parsing**: Uses `github.com/golang-jwt/jwt/v5` to parse the token without signature verification
-3. **Sub Extraction**: Extracts the `sub` claim from the token payload
-4. **Lookup Strategy**: Uses the extracted `sub` value to determine the appropriate lookup strategy:
-   - If `sub` contains `|` → Canonical lookup (direct user ID match)
-   - If `sub` contains `@` → Email search
-   - Otherwise → Username search
-5. **Fallback**: If JWT parsing fails, treats the input as a regular string
+**Opaque Token Examples:**
+```
+mock-token-zephyr-001
+mock-token-aurora-002
+mock-token-phoenix-003
+```
+
+#### 3. Mock Tokens (Direct Testing)
+The system includes predefined mock tokens for direct user identification:
+
+**Mock Token Format:**
+```
+mock-token-{username}-{id}
+```
+
+**Examples:**
+- `mock-token-zephyr-001` → Zephyr Stormwind
+- `mock-token-aurora-002` → Aurora Moonbeam
+- `mock-token-phoenix-003` → Phoenix Fireforge
+
+### Token Processing Flow
+
+1. **Token Detection**: The system automatically detects token type:
+   - JWT tokens: Start with `"eyJ"` (standard JWT header)
+   - Opaque tokens: Match predefined patterns
+   - Mock tokens: Follow `mock-token-*` pattern
+   - Fallback: Treat as username/email for direct lookup
+
+2. **JWT Processing** (when JWT detected):
+   - Parses token using `github.com/golang-jwt/jwt/v5`
+   - Extracts the `sub` claim from the token payload
+   - Uses `sub` value for user lookup strategy
+
+3. **Opaque Token Processing** (when opaque token detected):
+   - Maps opaque token to user via predefined token-to-user mapping
+   - Simulates Authelia's opaque token behavior
+
+4. **Mock Token Processing** (when mock token detected):
+   - Direct token-to-user mapping for testing scenarios
+
+5. **Fallback Processing**:
+   - If token parsing fails, treats input as username/email for direct lookup
 
 ### Important Notes
 
-- **No Signature Validation**: For simplicity in the mock environment, JWT signature validation is **not** performed. This avoids overcomplicating the development flow while still providing realistic JWT parsing behavior.
-- **Development Only**: This JWT parsing is intended for development and testing purposes only. Production implementations should include proper signature validation.
-- **Flexible Input**: The system gracefully handles both JWT tokens and regular string inputs (usernames, emails, user IDs).
+- **No Signature Validation**: For simplicity in the mock environment, JWT signature validation is **not** performed. This avoids overcomplicating the development flow while still providing realistic token parsing behavior.
+- **Development Only**: This token processing is intended for development and testing purposes only. Production implementations should include proper token validation.
+- **Flexible Input**: The system gracefully handles JWT tokens, opaque tokens, mock tokens, and regular string inputs (usernames, emails, user IDs).
+- **Multi-Provider Simulation**: Supports testing scenarios for both Auth0 (JWT) and Authelia (opaque) token workflows.
 
 ## Data Source
 

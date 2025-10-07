@@ -162,43 +162,14 @@ To retrieve user metadata, send a NATS request to the following subject:
 **Subject:** `lfx.auth-service.user_metadata.read`  
 **Pattern:** Request/Reply
 
-The service supports two lookup strategies based on the input format, providing both authoritative identification and convenient username-based searches.
-
-##### Input Format and Strategy Selection
-
-The service automatically determines the lookup strategy based on the input format:
-
-- **Canonical Lookup** (contains `|`): `<connection>|<provider_user_id>` - Subject identifier
-- **Search Lookup** (no `|`): `<username>` - Convenience lookup
-
-##### Canonical Lookup Strategy (Recommended)
-
-**Format:** `<connection>|<provider_user_id>`
-
-The canonical lookup is the **authoritative, standard way to identify a user**, regardless of which provider they come from.
-
-**Examples:** `auth0|123456789`, `google-oauth2|987654321`, `samlp|my-connection|user123`
-
-##### Search Lookup Strategy (Convenience)
-
-**Format:** `<username>`
-
-Username lookups are **convenience only** and help avoid connection collisions within the Username-Password-Authentication connection.
-
-**Examples:** `john.doe`, `jane.smith`, `developer123`
+The service takes a token and validates/retrieves user data from the target identity provider based on the `USER_REPOSITORY_TYPE` environment variable configuration.
 
 ##### Request Payload
 
-The request payload should be a plain text identifier (no JSON wrapping required):
+The request payload should be a token (no JSON wrapping required):
 
-**Canonical Lookup:**
 ```
-auth0|123456789
-```
-
-**Search Lookup:**
-```
-john.doe
+eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ##### Reply
@@ -236,35 +207,26 @@ The service returns a structured reply with user metadata:
 }
 ```
 
-**Error Reply (Invalid Input):**
+**Error Reply (Invalid Token):**
 ```json
 {
   "success": false,
-  "error": "input is required"
+  "error": "invalid token"
 }
 ```
 
-##### Examples using NATS CLI
+##### Example using NATS CLI
 
 ```bash
-# Canonical lookup (subject identifier)
-# Note: Use quotes to escape the pipe character in shell commands
-nats request lfx.auth-service.user_metadata.read "auth0|123456789"
-
-# Search lookup (convenience username lookup)
-nats request lfx.auth-service.user_metadata.read john.doe
-
+# Retrieve user metadata using token
+nats request lfx.auth-service.user_metadata.read "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
 **Important Notes:**
-- **Canonical lookups** are the preferred method for system-to-system communication
-- **Search lookups** are provided for convenience and user-facing interfaces
-- The pipe character (`|`) in canonical identifiers must be escaped with quotes in shell commands
-- Both strategies return the same metadata format on success
-- The service supports **Auth0**, **Authelia**, and **mock** repositories based on configuration
-- When using mock or authelia mode, the service simulates Auth0 behavior for development and testing
-- For detailed Auth0-specific behavior and limitations, see the [Auth0 Integration Documentation](internal/infrastructure/auth0/README.md)
-- For detailed Authelia-specific behavior and SUB management, see the [Authelia Integration Documentation](internal/infrastructure/authelia/README.md)
+- The service validates the token and extracts user information from the target identity provider
+- The target identity provider is determined by the `USER_REPOSITORY_TYPE` environment variable
+- For detailed Auth0-specific behavior and limitations, see: [`internal/infrastructure/auth0/README.md`](internal/infrastructure/auth0/README.md)
+- For detailed Authelia-specific behavior and SUB management, see: [`internal/infrastructure/authelia/README.md`](internal/infrastructure/authelia/README.md)
 
 ---
 
