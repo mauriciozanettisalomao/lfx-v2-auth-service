@@ -229,21 +229,22 @@ func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.U
 	}
 
 	// Determine lookup strategy based on input format
-	if strings.Contains(input, "|") {
+	switch {
+	case strings.Contains(input, "|"):
 		// Input contains "|", use as sub for canonical lookup
 		user.Sub = input
 		user.UserID = input
 		user.Username = ""
 		user.PrimaryEmail = ""
 		slog.InfoContext(ctx, "mock: canonical lookup strategy", "sub", input)
-	} else if strings.Contains(input, "@") {
+	case strings.Contains(input, "@"):
 		// Input looks like an email, use for email search
 		user.PrimaryEmail = strings.ToLower(input) // Normalize email to lowercase
 		user.Sub = ""
 		user.UserID = ""
 		user.Username = ""
 		slog.InfoContext(ctx, "mock: email search strategy", "email", user.PrimaryEmail)
-	} else {
+	default:
 		// Input doesn't contain "|" or "@", use for username search
 		user.Username = input
 		user.Sub = ""
