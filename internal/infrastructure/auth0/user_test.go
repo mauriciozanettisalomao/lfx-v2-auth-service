@@ -6,6 +6,7 @@ package auth0
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/converters"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUserReaderWriter_jwtVerify(t *testing.T) {
@@ -814,25 +817,57 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 	ctx := context.Background()
 	writer := &userReaderWriter{}
 
+	// Create a valid JWT token for testing
+	now := time.Now()
+	exp := now.Add(time.Hour)
+	validToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   "auth0|123456789",
+		"exp":   exp.Unix(),
+		"iat":   now.Unix(),
+		"scope": "read:current_user other:scope",
+	})
+	validTokenString, err := validToken.SignedString([]byte("secret"))
+	require.NoError(t, err)
+
 	tests := []struct {
-		name  string
-		input string
+		name        string
+		input       string
+		expectError bool
+		errorMsg    string
+		expectedSub string
 	}{
 		{
-			name:  "any input - method not implemented yet",
-			input: "auth0|123456789",
+			name:        "empty input",
+			input:       "",
+			expectError: true,
+			errorMsg:    "input is required",
 		},
 		{
-			name:  "email input - method not implemented yet",
-			input: "test@example.com",
+			name:        "invalid JWT token",
+			input:       "invalid-token",
+			expectError: true,
 		},
 		{
-			name:  "username input - method not implemented yet",
-			input: "testuser",
+			name:        "non-JWT input",
+			input:       "test@example.com",
+			expectError: true,
 		},
 		{
-			name:  "empty input - method not implemented yet",
-			input: "",
+			name:        "username input",
+			input:       "testuser",
+			expectError: true,
+		},
+		{
+			name:        "valid JWT token with read:current_user scope",
+			input:       validTokenString,
+			expectError: false,
+			expectedSub: "auth0|123456789",
+		},
+		{
+			name:        "valid JWT token with Bearer prefix",
+			input:       "Bearer " + validTokenString,
+			expectError: false,
+			expectedSub: "auth0|123456789",
 		},
 	}
 
@@ -840,13 +875,32 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			user, err := writer.MetadataLookup(ctx, tt.input)
 
-			// The current implementation returns nil, nil (TODO implementation)
-			if err != nil {
-				t.Errorf("MetadataLookup() unexpected error: %v", err)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("MetadataLookup() expected error but got none")
+					return
+				}
+				if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("MetadataLookup() error = %q, expected to contain %q", err.Error(), tt.errorMsg)
+				}
+				return
 			}
 
-			if user != nil {
-				t.Errorf("MetadataLookup() expected nil user (TODO implementation), got: %+v", user)
+			if err != nil {
+				t.Errorf("MetadataLookup() unexpected error: %v", err)
+				return
+			}
+
+			if user == nil {
+				t.Errorf("MetadataLookup() returned nil user")
+				return
+			}
+
+			// Verify the user fields are set correctly for successful cases
+			if tt.expectedSub != "" {
+				assert.Equal(t, tt.expectedSub, user.Sub, "Sub should match expected value")
+				assert.Equal(t, tt.expectedSub, user.UserID, "UserID should match expected value")
+				assert.Equal(t, strings.TrimPrefix(strings.TrimSpace(tt.input), "Bearer "), user.Token, "Token should be stored")
 			}
 		})
 	}
