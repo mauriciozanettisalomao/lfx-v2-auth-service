@@ -3,7 +3,12 @@
 
 package auth0
 
-import "github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
+import (
+	"encoding/json"
+	"log/slog"
+
+	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
+)
 
 // Auth0User represents a user in Auth0
 type Auth0User struct {
@@ -73,4 +78,30 @@ func (u *Auth0User) ToUser() *model.User {
 		PrimaryEmail: u.Email,
 		UserMetadata: meta,
 	}
+}
+
+// ErrorResponse represents an error response from Auth0
+type ErrorResponse struct {
+	StatusCode int    `json:"statusCode"`
+	Error      string `json:"error"`
+	Message    string `json:"message"`
+	Attributes struct {
+		Error string `json:"error"`
+	} `json:"attributes"`
+}
+
+// Message returns the error message from the attributes
+func (e *ErrorResponse) ErrorMessage(errorMessage string) string {
+	// parse the error message from the attributes
+	err := json.Unmarshal([]byte(errorMessage), e)
+	if err != nil {
+		slog.Error("failed to parse error message from attributes", "error", err)
+		return errorMessage
+	}
+	return e.Message
+}
+
+// NewErrorResponse creates a new ErrorResponse
+func NewErrorResponse() *ErrorResponse {
+	return &ErrorResponse{}
 }

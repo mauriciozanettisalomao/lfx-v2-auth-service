@@ -22,6 +22,7 @@ import (
 
 const (
 	userMetadataRequiredScope = "update:current_user_metadata"
+	userReadRequiredScope     = "read:current_user"
 
 	usernameFilter = "Username-Password-Authentication"
 )
@@ -48,8 +49,9 @@ type userUpdateRequest struct {
 }
 
 type userReaderWriter struct {
-	config     Config
-	httpClient *httpclient.Client
+	config        Config
+	httpClient    *httpclient.Client
+	errorResponse *ErrorResponse
 }
 
 func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) error {
@@ -185,14 +187,6 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 	slog.DebugContext(ctx, "getting user", "user_id", user.UserID)
 
-	if user.Token == "" {
-		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
-		if errGetToken != nil {
-			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
-		}
-		user.Token = m2mToken
-	}
-
 	// If we don't have a user ID, we can't fetch the user
 	if user.UserID == "" {
 		return nil, errors.NewValidation("user_id is required to get user")
@@ -220,10 +214,8 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		if statusCode == http.StatusNotFound {
-			return nil, errors.NewNotFound("user not found")
-		}
-		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
+		msg := u.errorResponse.ErrorMessage(errCall.Error())
+		return nil, httpclient.ErrorFromStatusCode(statusCode, msg)
 	}
 
 	if auth0User == nil {
@@ -240,11 +232,56 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 }
 
 // MetadataLookup prepares the user for metadata lookup based on the input
-// Returns true if should use canonical lookup, false if should use search
+// Verifies JWT token with read:current_user scope and extracts user information
 func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
-	// TODO: Implement
-	// breaking change, we'll address this in a future PR
-	return nil, nil
+	// Validate input
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, errors.NewValidation("input is required")
+	}
+
+	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
+
+	// Configure JWT parsing options for read scope
+	opts := &jwtparser.ParseOptions{
+		RequireExpiration: true,
+		RequiredScopes:    []string{userReadRequiredScope},
+		AllowBearerPrefix: true,
+		RequireSubject:    true,
+	}
+
+	// Parse and validate the JWT token
+	claims, err := jwtparser.ParseUnverified(ctx, input, opts)
+	if err != nil {
+		slog.ErrorContext(ctx, "JWT verification failed for metadata lookup",
+			"error", err,
+		)
+		return nil, err
+	}
+
+	// Clean the token by removing Bearer prefix if present
+	cleanToken := strings.TrimSpace(input)
+	if opts.AllowBearerPrefix {
+		parts := strings.Fields(input)
+		if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
+			cleanToken = strings.Join(parts[1:], " ")
+		}
+	}
+
+	// Create user object with cleaned token and extracted claims
+	user := &model.User{
+		Token:  cleanToken,
+		UserID: claims.Subject,
+		Sub:    claims.Subject,
+	}
+
+	slog.DebugContext(ctx, "JWT validation successful for metadata lookup",
+		"user_id", user.UserID,
+		"sub", user.Sub,
+		"expires_at", claims.ExpiresAt,
+		"scope", claims.Scope)
+
+	return user, nil
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -312,7 +349,8 @@ func NewUserReaderWriter(ctx context.Context, httpConfig httpclient.Config, auth
 	auth0Config.M2MTokenManager = m2mTokenManager
 
 	return &userReaderWriter{
-		config:     auth0Config,
-		httpClient: httpclient.NewClient(httpConfig),
+		config:        auth0Config,
+		httpClient:    httpclient.NewClient(httpConfig),
+		errorResponse: NewErrorResponse(),
 	}, nil
 }
