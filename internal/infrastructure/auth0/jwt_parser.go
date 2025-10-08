@@ -29,6 +29,7 @@ type JWTVerificationConfig struct {
 }
 
 // JWTVerify verifies a JWT token with the specified required scope
+// https://auth0.com/docs/secure/tokens/json-web-tokens/validate-json-web-tokens
 func (j *JWTVerificationConfig) JWTVerify(ctx context.Context, token string, requiredScope ...string) (*jwtparser.Claims, error) {
 	// JWT verification config is required
 	if j == nil {
