@@ -218,6 +218,10 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
 
 	// Verify JWT token with read scope
+	if u.config.JWTVerificationConfig == nil {
+		return nil, errors.NewValidation("JWT verification configuration is required")
+	}
+
 	claims, err := u.config.JWTVerificationConfig.JWTVerify(ctx, input, userReadRequiredScope)
 	if err != nil {
 		slog.ErrorContext(ctx, "JWT signature verification failed for metadata lookup",
@@ -248,6 +252,10 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
+
+	if u.config.JWTVerificationConfig == nil {
+		return nil, errors.NewValidation("JWT verification configuration is required")
+	}
 
 	claims, errJwtVerify := u.config.JWTVerificationConfig.JWTVerify(ctx, user.Token, userUpdateRequiredScope)
 	if errJwtVerify != nil {

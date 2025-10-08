@@ -29,7 +29,7 @@ type JWTVerificationConfig struct {
 }
 
 // JWTVerify verifies a JWT token with the specified required scope
-func (j *JWTVerificationConfig) JWTVerify(ctx context.Context, token string, requiredScope string) (*jwtparser.Claims, error) {
+func (j *JWTVerificationConfig) JWTVerify(ctx context.Context, token string, requiredScope ...string) (*jwtparser.Claims, error) {
 	// JWT verification config is required
 	if j == nil {
 		return nil, errors.NewValidation("JWT verification configuration is required")
@@ -38,13 +38,16 @@ func (j *JWTVerificationConfig) JWTVerify(ctx context.Context, token string, req
 	// Configure JWT parsing options with signature verification
 	opts := &jwtparser.ParseOptions{
 		RequireExpiration: true,
-		RequiredScopes:    []string{requiredScope},
 		AllowBearerPrefix: true,
 		RequireSubject:    true,
 		VerifySignature:   true,
 		SigningKey:        j.PublicKey,
 		ExpectedIssuer:    j.ExpectedIssuer,
 		ExpectedAudience:  j.ExpectedAudience,
+	}
+
+	if len(requiredScope) > 0 {
+		opts.RequiredScopes = requiredScope
 	}
 
 	// Parse and validate the JWT token with signature verification
