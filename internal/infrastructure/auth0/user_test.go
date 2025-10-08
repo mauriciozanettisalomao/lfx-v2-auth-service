@@ -6,6 +6,7 @@ package auth0
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/converters"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUserReaderWriter_jwtVerify(t *testing.T) {
@@ -155,7 +158,7 @@ func TestUserReaderWriter_jwtVerify(t *testing.T) {
 				}
 			},
 			wantError: true,
-			errorMsg:  "wrong scope, got",
+			errorMsg:  "missing required scope",
 		},
 		{
 			name: "scope with multiple values including required",
@@ -754,7 +757,7 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "wrong scope",
+			expectedErr: "missing required scope",
 		},
 	}
 
@@ -814,151 +817,90 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 	ctx := context.Background()
 	writer := &userReaderWriter{}
 
+	// Create a valid JWT token for testing
+	now := time.Now()
+	exp := now.Add(time.Hour)
+	validToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   "auth0|123456789",
+		"exp":   exp.Unix(),
+		"iat":   now.Unix(),
+		"scope": "read:current_user other:scope",
+	})
+	validTokenString, err := validToken.SignedString([]byte("secret"))
+	require.NoError(t, err)
+
 	tests := []struct {
-		name                 string
-		input                string
-		expectedCanonical    bool
-		expectedSub          string
-		expectedUserID       string
-		expectedUsername     string
-		expectedPrimaryEmail string
+		name        string
+		input       string
+		expectError bool
+		errorMsg    string
+		expectedSub string
 	}{
 		{
-			name:                 "canonical lookup with pipe separator",
-			input:                "auth0|123456789",
-			expectedCanonical:    true,
-			expectedSub:          "auth0|123456789",
-			expectedUserID:       "auth0|123456789",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
+			name:        "empty input",
+			input:       "",
+			expectError: true,
+			errorMsg:    "input is required",
 		},
 		{
-			name:                 "canonical lookup with google oauth",
-			input:                "google-oauth2|987654321",
-			expectedCanonical:    true,
-			expectedSub:          "google-oauth2|987654321",
-			expectedUserID:       "google-oauth2|987654321",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
+			name:        "invalid JWT token",
+			input:       "invalid-token",
+			expectError: true,
 		},
 		{
-			name:                 "canonical lookup with github oauth",
-			input:                "github|456789123",
-			expectedCanonical:    true,
-			expectedSub:          "github|456789123",
-			expectedUserID:       "github|456789123",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
+			name:        "non-JWT input",
+			input:       "test@example.com",
+			expectError: true,
 		},
 		{
-			name:                 "canonical lookup with saml enterprise",
-			input:                "samlp|enterprise|user123",
-			expectedCanonical:    true,
-			expectedSub:          "samlp|enterprise|user123",
-			expectedUserID:       "samlp|enterprise|user123",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
+			name:        "username input",
+			input:       "testuser",
+			expectError: true,
 		},
 		{
-			name:                 "canonical lookup with linkedin oauth",
-			input:                "linkedin|789123456",
-			expectedCanonical:    true,
-			expectedSub:          "linkedin|789123456",
-			expectedUserID:       "linkedin|789123456",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
+			name:        "valid JWT token with read:current_user scope",
+			input:       validTokenString,
+			expectError: false,
+			expectedSub: "auth0|123456789",
 		},
 		{
-			name:                 "search lookup with username",
-			input:                "john.doe",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "john.doe",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username containing numbers",
-			input:                "developer123",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "developer123",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "search lookup with username containing dots and underscores",
-			input:                "jane_smith.dev",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "jane_smith.dev",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "empty input",
-			input:                "",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "whitespace only input",
-			input:                "   ",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "input with leading/trailing whitespace - canonical",
-			input:                "  auth0|123456789  ",
-			expectedCanonical:    true,
-			expectedSub:          "auth0|123456789",
-			expectedUserID:       "auth0|123456789",
-			expectedUsername:     "",
-			expectedPrimaryEmail: "",
-		},
-		{
-			name:                 "input with leading/trailing whitespace - search",
-			input:                "  john.doe  ",
-			expectedCanonical:    false,
-			expectedSub:          "",
-			expectedUserID:       "",
-			expectedUsername:     "john.doe",
-			expectedPrimaryEmail: "",
+			name:        "valid JWT token with Bearer prefix",
+			input:       "Bearer " + validTokenString,
+			expectError: false,
+			expectedSub: "auth0|123456789",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user := &model.User{}
+			user, err := writer.MetadataLookup(ctx, tt.input)
 
-			isCanonical := writer.MetadataLookup(ctx, tt.input, user)
-
-			// Check canonical vs search lookup decision
-			if isCanonical != tt.expectedCanonical {
-				t.Errorf("MetadataLookup() canonical = %v, expected %v", isCanonical, tt.expectedCanonical)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("MetadataLookup() expected error but got none")
+					return
+				}
+				if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("MetadataLookup() error = %q, expected to contain %q", err.Error(), tt.errorMsg)
+				}
+				return
 			}
 
-			// Check user fields are set correctly
-			if user.Sub != tt.expectedSub {
-				t.Errorf("MetadataLookup() Sub = %q, expected %q", user.Sub, tt.expectedSub)
+			if err != nil {
+				t.Errorf("MetadataLookup() unexpected error: %v", err)
+				return
 			}
 
-			if user.UserID != tt.expectedUserID {
-				t.Errorf("MetadataLookup() UserID = %q, expected %q", user.UserID, tt.expectedUserID)
+			if user == nil {
+				t.Errorf("MetadataLookup() returned nil user")
+				return
 			}
 
-			if user.Username != tt.expectedUsername {
-				t.Errorf("MetadataLookup() Username = %q, expected %q", user.Username, tt.expectedUsername)
-			}
-
-			if user.PrimaryEmail != tt.expectedPrimaryEmail {
-				t.Errorf("MetadataLookup() PrimaryEmail = %q, expected %q", user.PrimaryEmail, tt.expectedPrimaryEmail)
+			// Verify the user fields are set correctly for successful cases
+			if tt.expectedSub != "" {
+				assert.Equal(t, tt.expectedSub, user.Sub, "Sub should match expected value")
+				assert.Equal(t, tt.expectedSub, user.UserID, "UserID should match expected value")
+				assert.Equal(t, strings.TrimPrefix(strings.TrimSpace(tt.input), "Bearer "), user.Token, "Token should be stored")
 			}
 		})
 	}

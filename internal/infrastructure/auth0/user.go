@@ -9,22 +9,20 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
-	"time"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
+	jwtparser "github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
 	userMetadataRequiredScope = "update:current_user_metadata"
+	userReadRequiredScope     = "read:current_user"
 
 	usernameFilter = "Username-Password-Authentication"
 )
@@ -51,82 +49,34 @@ type userUpdateRequest struct {
 }
 
 type userReaderWriter struct {
-	config     Config
-	httpClient *httpclient.Client
+	config        Config
+	httpClient    *httpclient.Client
+	errorResponse *ErrorResponse
 }
 
 func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) error {
-	if strings.TrimSpace(user.Token) == "" {
-		return fmt.Errorf("token is required")
+	// Configure JWT parsing options
+	opts := &jwtparser.ParseOptions{
+		RequireExpiration: true,
+		RequiredScopes:    []string{userMetadataRequiredScope},
+		AllowBearerPrefix: true,
+		RequireSubject:    true,
 	}
 
-	// Remove optional Bearer prefix (case-insensitive) and trim
-	tokenString := strings.TrimSpace(user.Token)
-	parts := strings.Fields(user.Token)
-	if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
-		tokenString = strings.Join(parts[1:], " ")
-	}
-
-	// Parse the token without verification for now (we'll add JWKS verification later if needed)
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	// Parse and validate the JWT token
+	claims, err := jwtparser.ParseUnverified(ctx, user.Token, opts)
 	if err != nil {
-		return errors.NewValidation("failed to parse JWT token: %w", err)
+		return err
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return errors.NewValidation("invalid token claims")
-	}
+	// Extract the user_id from the 'sub' claim
+	user.UserID = claims.Subject
 
-	// 1. Extract user_id from 'sub' claim
-	sub, ok := claims["sub"].(string)
-	if !ok || strings.TrimSpace(sub) == "" {
-		return errors.NewValidation("missing or invalid 'sub' claim in token")
-	}
+	slog.DebugContext(ctx, "JWT validation successful",
+		"user_id", user.UserID,
+		"expires_at", claims.ExpiresAt,
+		"scope", claims.Scope)
 
-	// Assign the user_id from sub claim
-	user.UserID = sub
-
-	slog.DebugContext(ctx, "extracted user_id from token", "user_id", user.UserID)
-
-	// 2. Check if token is expired
-	exp, okExp := claims["exp"]
-	if !okExp {
-		return errors.NewValidation("missing 'exp' claim in token")
-	}
-	var expTime time.Time
-	switch expValue := exp.(type) {
-	case float64:
-		expTime = time.Unix(int64(expValue), 0)
-	case int64:
-		expTime = time.Unix(expValue, 0)
-	case int:
-		expTime = time.Unix(int64(expValue), 0)
-	default:
-		return errors.NewValidation("invalid 'exp' claim format")
-	}
-	if time.Now().After(expTime) {
-		return errors.NewValidation(fmt.Sprintf("token has expired at %v", expTime))
-	}
-	slog.DebugContext(ctx, "token expiration validated", "expires_at", expTime)
-
-	// 3. Check if scope contains 'update:current_user_metadata'
-	scopeClaim, okScopeClaim := claims["scope"]
-	if !okScopeClaim {
-		return errors.NewValidation("missing 'scope' claim in token")
-	}
-	scopeString, ok := scopeClaim.(string)
-	if !ok {
-		return errors.NewValidation("invalid 'scope' claim format")
-	}
-
-	scopes := strings.Fields(scopeString) // Split by whitespace
-	hasRequiredScope := slices.Contains(scopes, userMetadataRequiredScope)
-	if !hasRequiredScope {
-		return errors.NewValidation(fmt.Sprintf("wrong scope, got %s", scopeString))
-	}
-
-	slog.DebugContext(ctx, "JWT validation successful", "user_id", user.UserID)
 	return nil
 }
 
@@ -237,14 +187,6 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 	slog.DebugContext(ctx, "getting user", "user_id", user.UserID)
 
-	if user.Token == "" {
-		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
-		if errGetToken != nil {
-			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
-		}
-		user.Token = m2mToken
-	}
-
 	// If we don't have a user ID, we can't fetch the user
 	if user.UserID == "" {
 		return nil, errors.NewValidation("user_id is required to get user")
@@ -272,10 +214,8 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 			"status_code", statusCode,
 			"user_id", user.UserID,
 		)
-		if statusCode == http.StatusNotFound {
-			return nil, errors.NewNotFound("user not found")
-		}
-		return nil, errors.NewUnexpected("failed to get user from Auth0", errCall)
+		msg := u.errorResponse.ErrorMessage(errCall.Error())
+		return nil, httpclient.ErrorFromStatusCode(statusCode, msg)
 	}
 
 	if auth0User == nil {
@@ -292,22 +232,56 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 }
 
 // MetadataLookup prepares the user for metadata lookup based on the input
-// Returns true if should use canonical lookup, false if should use search
-func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string, user *model.User) bool {
+// Verifies JWT token with read:current_user scope and extracts user information
+func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
+	// Validate input
 	input = strings.TrimSpace(input)
-
-	if strings.Contains(input, "|") {
-		// Input contains "|", use as sub for canonical lookup
-		user.Sub = input
-		user.UserID = input // Auth0 uses user_id for the canonical lookup
-		user.Username = ""  // Clear username field
-		return true
+	if input == "" {
+		return nil, errors.NewValidation("input is required")
 	}
-	// Input doesn't contain "|", use for search query
-	user.Sub = ""    // Clear sub field
-	user.UserID = "" // Clear user_id field
-	user.Username = input
-	return false
+
+	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
+
+	// Configure JWT parsing options for read scope
+	opts := &jwtparser.ParseOptions{
+		RequireExpiration: true,
+		RequiredScopes:    []string{userReadRequiredScope},
+		AllowBearerPrefix: true,
+		RequireSubject:    true,
+	}
+
+	// Parse and validate the JWT token
+	claims, err := jwtparser.ParseUnverified(ctx, input, opts)
+	if err != nil {
+		slog.ErrorContext(ctx, "JWT verification failed for metadata lookup",
+			"error", err,
+		)
+		return nil, err
+	}
+
+	// Clean the token by removing Bearer prefix if present
+	cleanToken := strings.TrimSpace(input)
+	if opts.AllowBearerPrefix {
+		parts := strings.Fields(input)
+		if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
+			cleanToken = strings.Join(parts[1:], " ")
+		}
+	}
+
+	// Create user object with cleaned token and extracted claims
+	user := &model.User{
+		Token:  cleanToken,
+		UserID: claims.Subject,
+		Sub:    claims.Subject,
+	}
+
+	slog.DebugContext(ctx, "JWT validation successful for metadata lookup",
+		"user_id", user.UserID,
+		"sub", user.Sub,
+		"expires_at", claims.ExpiresAt,
+		"scope", claims.Scope)
+
+	return user, nil
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -375,7 +349,8 @@ func NewUserReaderWriter(ctx context.Context, httpConfig httpclient.Config, auth
 	auth0Config.M2MTokenManager = m2mTokenManager
 
 	return &userReaderWriter{
-		config:     auth0Config,
-		httpClient: httpclient.NewClient(httpConfig),
+		config:        auth0Config,
+		httpClient:    httpclient.NewClient(httpConfig),
+		errorResponse: NewErrorResponse(),
 	}, nil
 }

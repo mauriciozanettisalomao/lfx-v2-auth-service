@@ -19,7 +19,7 @@ type UserReaderWriter interface {
 type UserReader interface {
 	GetUser(ctx context.Context, user *model.User) (*model.User, error)
 	SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error)
-	MetadataLookup(ctx context.Context, input string, user *model.User) bool
+	MetadataLookup(ctx context.Context, input string) (*model.User, error)
 }
 
 // UserWriter defines the behavior of the user writer

@@ -5,6 +5,7 @@ package authelia
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,8 +17,6 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
-
-	"github.com/google/uuid"
 )
 
 // userReaderWriter implements UserReaderWriter with pluggable storage and ConfigMap sync
@@ -56,7 +55,7 @@ func (a *userReaderWriter) fetchOIDCUserInfo(ctx context.Context, token string) 
 			"status_code", statusCode,
 			"url", a.oidcUserInfoURL,
 		)
-		return nil, errors.NewUnexpected("failed to fetch OIDC userinfo", err)
+		return nil, httpclient.ErrorFromStatusCode(statusCode, fmt.Sprintf("failed to fetch OIDC userinfo: %v", err))
 	}
 
 	return &userInfo, nil
@@ -115,12 +114,12 @@ func (a *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 	}
 
 	key := ""
-	if user.Sub != "" {
-		key = a.storage.BuildLookupKey(ctx, "sub", user.BuildSubIndexKey(ctx))
+	if user.Username != "" {
+		key = user.Username
 	}
 
-	if key == "" {
-		key = user.Username
+	if key == "" && user.Sub != "" {
+		key = a.storage.BuildLookupKey(ctx, "sub", user.BuildSubIndexKey(ctx))
 	}
 
 	existingUser, err := a.storage.GetUser(ctx, key)
@@ -136,21 +135,37 @@ func (a *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 // MetadataLookup prepares the user for metadata lookup based on the input
 // Returns true if should use canonical lookup, false if should use search
-func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string, user *model.User) bool {
-	input = strings.TrimSpace(input)
+func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
 
-	user.Username = input
-	if input != "" {
-		sub, err := uuid.Parse(input)
-		if err != nil {
-			return false
-		}
-		user.Sub = sub.String()
-		// user ID is used across the system as the unique identifier for the user
-		user.UserID = sub.String()
-		return true
+	if input == "" {
+		return nil, errors.NewValidation("input is required")
 	}
-	return false
+
+	userInfo, err := u.fetchOIDCUserInfo(ctx, input)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to fetch OIDC userinfo",
+			"error", err,
+		)
+		return nil, err
+	}
+
+	user := &model.User{}
+	if userInfo != nil {
+		if userInfo.Sub != "" {
+			slog.DebugContext(ctx, "found sub in OIDC userinfo",
+				"sub", userInfo.Sub,
+			)
+			user.Sub = userInfo.Sub
+		}
+		if userInfo.PreferredUsername != "" {
+			slog.DebugContext(ctx, "found username in OIDC userinfo",
+				"username", userInfo.PreferredUsername,
+			)
+			user.Username = userInfo.PreferredUsername
+		}
+	}
+
+	return user, nil
 }
 
 // UpdateUser updates a user only in storage with patch-like behavior, updating only changed fields

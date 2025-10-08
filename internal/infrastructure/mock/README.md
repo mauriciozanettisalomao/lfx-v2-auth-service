@@ -10,7 +10,7 @@ The mock user system provides a simple in-memory storage solution for user data 
 
 - **In-memory storage**: Fast, stateful mock operations during runtime
 - **YAML data source**: Embedded YAML file with five predefined users for consistent testing
-- **Dual-key lookup**: Users can be found by either username or primary email
+- **JWT token support**: Parses JWT tokens and extracts the `sub` claim for user identification
 - **PATCH-style updates**: Only non-empty/non-nil fields are updated
 - **Comprehensive logging**: Detailed logging for debugging and monitoring
 
@@ -38,6 +38,98 @@ The system includes five users defined in the YAML file:
 - **Role**: Full Stack Wizard at Mythical Development Co
 - **Location**: San Francisco, USA
 - **Timezone**: America/Los_Angeles
+
+## Token Support
+
+The mock implementation supports multiple token types for testing different identity provider scenarios. The system automatically detects the token type and processes it accordingly.
+
+### Supported Token Types
+
+#### 1. JWT Tokens (Auth0 Simulation)
+For testing Auth0-like behavior, the system supports JWT token parsing:
+
+**JWT Token Generation:**
+You can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
+
+1. Go to [https://www.jwt.io](https://www.jwt.io)
+2. Navigate to the **JWT Encoder** tab
+3. Use the following configuration:
+
+**Header:**
+```json
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+```
+
+**Payload:**
+```json
+{
+  "sub": "auth0|zephyr001",
+  "name": "Zephyr Stormwind",
+  "admin": true,
+  "iat": 1516239022
+}
+```
+
+**Secret:**
+```
+a-string-secret-at-least-256-bits-long
+```
+
+#### 2. Opaque Tokens (Authelia Simulation)
+For testing Authelia-like behavior, the system supports opaque token mapping:
+
+**Opaque Token Examples:**
+```
+mock-token-zephyr-001
+mock-token-aurora-002
+mock-token-phoenix-003
+```
+
+#### 3. Mock Tokens (Direct Testing)
+The system includes predefined mock tokens for direct user identification:
+
+**Mock Token Format:**
+```
+mock-token-{username}-{id}
+```
+
+**Examples:**
+- `mock-token-zephyr-001` → Zephyr Stormwind
+- `mock-token-aurora-002` → Aurora Moonbeam
+- `mock-token-phoenix-003` → Phoenix Fireforge
+
+### Token Processing Flow
+
+1. **Token Detection**: The system automatically detects token type:
+   - JWT tokens: Start with `"eyJ"` (standard JWT header)
+   - Opaque tokens: Match predefined patterns
+   - Mock tokens: Follow `mock-token-*` pattern
+   - Fallback: Treat as username/email for direct lookup
+
+2. **JWT Processing** (when JWT detected):
+   - Parses token using `github.com/golang-jwt/jwt/v5`
+   - Extracts the `sub` claim from the token payload
+   - Uses `sub` value for user lookup strategy
+
+3. **Opaque Token Processing** (when opaque token detected):
+   - Maps opaque token to user via predefined token-to-user mapping
+   - Simulates Authelia's opaque token behavior
+
+4. **Mock Token Processing** (when mock token detected):
+   - Direct token-to-user mapping for testing scenarios
+
+5. **Fallback Processing**:
+   - If token parsing fails, treats input as username/email for direct lookup
+
+### Important Notes
+
+- **No Signature Validation**: For simplicity in the mock environment, JWT signature validation is **not** performed. This avoids overcomplicating the development flow while still providing realistic token parsing behavior.
+- **Development Only**: This token processing is intended for development and testing purposes only. Production implementations should include proper token validation.
+- **Flexible Input**: The system gracefully handles JWT tokens, opaque tokens, mock tokens, and regular string inputs (usernames, emails, user IDs).
+- **Multi-Provider Simulation**: Supports testing scenarios for both Auth0 (JWT) and Authelia (opaque) token workflows.
 
 ## Data Source
 
@@ -87,6 +179,7 @@ internal/infrastructure/mock/
 The mock system is perfect for:
 - Unit tests requiring predictable user data
 - Integration tests needing consistent user scenarios
+- JWT token parsing and validation testing
 - Development environments where real Auth0 integration isn't needed
 - Demo environments requiring realistic but fake user profiles
 
