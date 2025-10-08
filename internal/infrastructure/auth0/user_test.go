@@ -554,7 +554,7 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "failed to parse and verify JWT token",
+			expectedErr: "failed to parse jws",
 		},
 		{
 			name: "expired jwt token",

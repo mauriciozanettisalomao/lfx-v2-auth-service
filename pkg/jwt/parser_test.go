@@ -453,7 +453,7 @@ func TestLoadRSAPublicKeyFromJWK(t *testing.T) {
 		"use": "sig",
 		"kid": "test-key-1",
 		"alg": "RS256",
-		"n": "` + encodeBase64URL(privateKey.PublicKey.N.Bytes()) + `",
+		"n": "` + encodeBase64URL(privateKey.N.Bytes()) + `",
 		"e": "` + encodeBase64URL([]byte{1, 0, 1}) + `"
 	}`)
 
@@ -463,11 +463,11 @@ func TestLoadRSAPublicKeyFromJWK(t *testing.T) {
 		t.Fatalf("Failed to load RSA public key from JWK: %v", err)
 	}
 
-	if loadedKey.N.Cmp(privateKey.PublicKey.N) != 0 {
+	if loadedKey.N.Cmp(privateKey.N) != 0 {
 		t.Error("Loaded key modulus doesn't match original")
 	}
 
-	if loadedKey.E != privateKey.PublicKey.E {
+	if loadedKey.E != privateKey.E {
 		t.Error("Loaded key exponent doesn't match original")
 	}
 }
