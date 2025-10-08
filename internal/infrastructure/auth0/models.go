@@ -92,13 +92,17 @@ type ErrorResponse struct {
 
 // Message returns the error message from the attributes
 func (e *ErrorResponse) ErrorMessage(errorMessage string) string {
+	var parsed ErrorResponse
 	// parse the error message from the attributes
-	err := json.Unmarshal([]byte(errorMessage), e)
+	err := json.Unmarshal([]byte(errorMessage), &parsed)
 	if err != nil {
 		slog.Error("failed to parse error message from attributes", "error", err)
 		return errorMessage
 	}
-	return e.Message
+	if parsed.Message != "" {
+		return parsed.Message
+	}
+	return errorMessage
 }
 
 // NewErrorResponse creates a new ErrorResponse

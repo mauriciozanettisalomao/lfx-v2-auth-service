@@ -5,6 +5,8 @@ package auth0
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -18,209 +20,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUserReaderWriter_jwtVerify(t *testing.T) {
-	writer := &userReaderWriter{}
-	ctx := context.Background()
+// createTestJWTVerificationConfig creates a test JWT verification configuration
+func createTestJWTVerificationConfig(t *testing.T) (*JWTVerificationConfig, *rsa.PrivateKey) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
 
-	// Helper function to create a test JWT token
-	createTestToken := func(claims jwt.MapClaims) string {
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, _ := token.SignedString([]byte("test-secret"))
-		return tokenString
-	}
-
-	tests := []struct {
-		name      string
-		user      *model.User
-		wantError bool
-		errorMsg  string
-		setupUser func() *model.User
-	}{
-		{
-			name: "valid token with all required claims",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|fantasticwizard",
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "read:profile update:current_user_metadata write:data",
-					"iss":   "https://mythicaltech-dev.auth0.com/",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: false,
-		},
-		{
-			name: "empty token",
-			setupUser: func() *model.User {
-				return &model.User{Token: ""}
-			},
-			wantError: true,
-			errorMsg:  "token is required",
-		},
-		{
-			name: "token with Bearer prefix",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|testuser",
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "update:current_user_metadata",
-				}
-				return &model.User{
-					Token: "Bearer " + createTestToken(claims),
-				}
-			},
-			wantError: false,
-		},
-		{
-			name: "missing sub claim",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "update:current_user_metadata",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "missing or invalid 'sub' claim in token",
-		},
-		{
-			name: "empty sub claim",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "",
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "update:current_user_metadata",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "missing or invalid 'sub' claim in token",
-		},
-		{
-			name: "expired token",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|testuser",
-					"exp":   time.Now().Add(-time.Hour).Unix(), // Expired 1 hour ago
-					"scope": "update:current_user_metadata",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "token has expired",
-		},
-		{
-			name: "missing exp claim",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|testuser",
-					"scope": "update:current_user_metadata",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "missing 'exp' claim in token",
-		},
-		{
-			name: "missing scope claim",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub": "auth0|testuser",
-					"exp": time.Now().Add(time.Hour).Unix(),
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "missing 'scope' claim in token",
-		},
-		{
-			name: "missing required scope",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|testuser",
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "read:profile write:data", // Missing update:current_user_metadata
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: true,
-			errorMsg:  "missing required scope",
-		},
-		{
-			name: "scope with multiple values including required",
-			setupUser: func() *model.User {
-				claims := jwt.MapClaims{
-					"sub":   "auth0|testuser",
-					"exp":   time.Now().Add(time.Hour).Unix(),
-					"scope": "read:profile update:current_user_metadata write:data delete:files",
-				}
-				return &model.User{
-					Token: createTestToken(claims),
-				}
-			},
-			wantError: false,
-		},
-		{
-			name: "invalid JWT format",
-			setupUser: func() *model.User {
-				return &model.User{
-					Token: "invalid.jwt.token",
-				}
-			},
-			wantError: true,
-			errorMsg:  "failed to parse JWT token",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			user := tt.setupUser()
-			originalUserID := user.UserID
-
-			err := writer.jwtVerify(ctx, user)
-
-			if tt.wantError {
-				if err == nil {
-					t.Errorf("jwtVerify() should return error")
-					return
-				}
-				if !containsString(err.Error(), tt.errorMsg) {
-					t.Errorf("jwtVerify() error = %v, should contain %v", err.Error(), tt.errorMsg)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("jwtVerify() should not return error, got %v", err)
-					return
-				}
-
-				// Check that user_id was assigned from sub claim
-				if user.UserID == "" {
-					t.Errorf("jwtVerify() should assign user_id from sub claim")
-				}
-				if user.UserID == originalUserID && originalUserID == "" {
-					t.Errorf("jwtVerify() should have updated user_id from empty to a value")
-				}
-			}
-		})
-	}
+	return &JWTVerificationConfig{
+		PublicKey:        &privateKey.PublicKey,
+		ExpectedIssuer:   "https://test.auth0.com/",
+		ExpectedAudience: "https://test.auth0.com/api/v2/",
+	}, privateKey
 }
 
 func TestUserReaderWriter_UpdateUser(t *testing.T) {
 	ctx := context.Background()
+
+	// Create test JWT verification config
+	jwtConfig, privateKey := createTestJWTVerificationConfig(t)
 
 	// Create a valid token
 	createValidToken := func() string {
@@ -228,9 +44,11 @@ func TestUserReaderWriter_UpdateUser(t *testing.T) {
 			"sub":   "auth0|testuser",
 			"exp":   time.Now().Add(time.Hour).Unix(),
 			"scope": "update:current_user_metadata",
+			"iss":   "https://test.auth0.com/",
+			"aud":   "https://test.auth0.com/api/v2/",
 		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, _ := token.SignedString([]byte("test-secret"))
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		tokenString, _ := token.SignedString(privateKey)
 		return tokenString
 	}
 
@@ -244,8 +62,9 @@ func TestUserReaderWriter_UpdateUser(t *testing.T) {
 		{
 			name: "missing domain configuration",
 			config: Config{
-				Tenant: "test-tenant",
-				Domain: "", // Missing domain
+				Tenant:                "test-tenant",
+				Domain:                "", // Missing domain
+				JWTVerificationConfig: jwtConfig,
 			},
 			user: &model.User{
 				Token:        createValidToken(),
@@ -261,8 +80,9 @@ func TestUserReaderWriter_UpdateUser(t *testing.T) {
 		{
 			name: "valid JWT validation only (no HTTP call due to missing domain)",
 			config: Config{
-				Tenant: "test-tenant",
-				Domain: "", // This will cause HTTP call to be skipped
+				Tenant:                "test-tenant",
+				Domain:                "", // This will cause HTTP call to be skipped
+				JWTVerificationConfig: jwtConfig,
 			},
 			user: &model.User{
 				Token:        createValidToken(),
@@ -311,20 +131,22 @@ func TestUserReaderWriter_UpdateUser(t *testing.T) {
 func TestUserReaderWriter_UpdateUser_JWTValidation(t *testing.T) {
 	ctx := context.Background()
 
+	// Create test JWT verification config
+	verify, privateKey := createTestJWTVerificationConfig(t)
+
 	// Create a valid token
 	createValidToken := func() string {
 		claims := jwt.MapClaims{
 			"sub":   "auth0|testuser",
 			"exp":   time.Now().Add(time.Hour).Unix(),
 			"scope": "update:current_user_metadata",
+			"iss":   "https://test.auth0.com/",
+			"aud":   "https://test.auth0.com/api/v2/",
 		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, _ := token.SignedString([]byte("test-secret"))
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		tokenString, _ := token.SignedString(privateKey)
 		return tokenString
 	}
-
-	// Test that JWT validation works correctly by testing the jwtVerify method directly
-	writer := &userReaderWriter{}
 
 	user := &model.User{
 		Token:        createValidToken(),
@@ -333,10 +155,15 @@ func TestUserReaderWriter_UpdateUser_JWTValidation(t *testing.T) {
 	}
 
 	// Test JWT verification directly (this should work)
-	err := writer.jwtVerify(ctx, user)
+	claims, err := verify.JWTVerify(ctx, user.Token, userUpdateRequiredScope)
 	if err != nil {
 		t.Errorf("jwtVerify() should not return error, got %v", err)
 		return
+	}
+
+	// Set user_id from claims
+	if claims != nil {
+		user.UserID = claims.Subject
 	}
 
 	// Check that user_id was assigned from token
@@ -634,15 +461,20 @@ func TestUserReaderWriter_UpdateUser_JSONSerialization(t *testing.T) {
 func TestUserReaderWriter_UpdateUser_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
 
+	// Create test JWT verification config
+	jwtConfig, privateKey := createTestJWTVerificationConfig(t)
+
 	// Create a valid token
 	createValidToken := func() string {
 		claims := jwt.MapClaims{
 			"sub":   "auth0|testuser",
 			"exp":   time.Now().Add(time.Hour).Unix(),
 			"scope": "update:current_user_metadata",
+			"iss":   "https://test.auth0.com/",
+			"aud":   "https://test.auth0.com/api/v2/",
 		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, _ := token.SignedString([]byte("test-secret"))
+		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		tokenString, _ := token.SignedString(privateKey)
 		return tokenString
 	}
 
@@ -654,16 +486,18 @@ func TestUserReaderWriter_UpdateUser_ConfigValidation(t *testing.T) {
 		{
 			name: "missing domain configuration",
 			config: Config{
-				Tenant: "test-tenant",
-				Domain: "", // Missing domain
+				Tenant:                "test-tenant",
+				Domain:                "", // Missing domain
+				JWTVerificationConfig: jwtConfig,
 			},
 			expectedErr: "Auth0 domain configuration is missing",
 		},
 		{
 			name: "missing tenant configuration",
 			config: Config{
-				Tenant: "", // Missing tenant
-				Domain: "", // Also missing domain to prevent HTTP calls
+				Tenant:                "", // Missing tenant
+				Domain:                "", // Also missing domain to prevent HTTP calls
+				JWTVerificationConfig: jwtConfig,
 			},
 			expectedErr: "Auth0 domain configuration is missing",
 		},
@@ -701,6 +535,9 @@ func TestUserReaderWriter_UpdateUser_ConfigValidation(t *testing.T) {
 func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 	ctx := context.Background()
 
+	// Create test JWT verification config
+	jwtConfig, privateKey := createTestJWTVerificationConfig(t)
+
 	tests := []struct {
 		name        string
 		setupUser   func() *model.User
@@ -717,7 +554,7 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "failed to parse JWT token",
+			expectedErr: "failed to parse and verify JWT token",
 		},
 		{
 			name: "expired jwt token",
@@ -726,9 +563,11 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					"sub":   "auth0|testuser",
 					"exp":   time.Now().Add(-time.Hour).Unix(), // Expired 1 hour ago
 					"scope": "update:current_user_metadata",
+					"iss":   "https://test.auth0.com/",
+					"aud":   "https://test.auth0.com/api/v2/",
 				}
-				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-				tokenString, _ := token.SignedString([]byte("test-secret"))
+				token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+				tokenString, _ := token.SignedString(privateKey)
 				return &model.User{
 					Token:    tokenString,
 					Username: "TestUser",
@@ -737,7 +576,7 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					},
 				}
 			},
-			expectedErr: "token has expired",
+			expectedErr: "exp",
 		},
 		{
 			name: "missing required scope",
@@ -746,9 +585,11 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 					"sub":   "auth0|testuser",
 					"exp":   time.Now().Add(time.Hour).Unix(),
 					"scope": "read:profile write:data", // Missing update:current_user_metadata
+					"iss":   "https://test.auth0.com/",
+					"aud":   "https://test.auth0.com/api/v2/",
 				}
-				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-				tokenString, _ := token.SignedString([]byte("test-secret"))
+				token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+				tokenString, _ := token.SignedString(privateKey)
 				return &model.User{
 					Token:    tokenString,
 					Username: "TestUser",
@@ -765,8 +606,9 @@ func TestUserReaderWriter_UpdateUser_JWTValidationIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use empty domain to skip HTTP call and focus on JWT validation
 			config := Config{
-				Tenant: "test-tenant",
-				Domain: "", // This will cause the function to fail at config validation
+				Tenant:                "test-tenant",
+				Domain:                "", // This will cause the function to fail at config validation
+				JWTVerificationConfig: jwtConfig,
 			}
 
 			readerWriter := &userReaderWriter{}
@@ -815,18 +657,28 @@ func ptrValue(ptr *string) string {
 // TestUserReaderWriter_MetadataLookup tests the MetadataLookup method for Auth0 implementation
 func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 	ctx := context.Background()
-	writer := &userReaderWriter{}
+
+	// Create test JWT verification config
+	jwtConfig, privateKey := createTestJWTVerificationConfig(t)
+
+	writer := &userReaderWriter{
+		config: Config{
+			JWTVerificationConfig: jwtConfig,
+		},
+	}
 
 	// Create a valid JWT token for testing
 	now := time.Now()
 	exp := now.Add(time.Hour)
-	validToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	validToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"sub":   "auth0|123456789",
 		"exp":   exp.Unix(),
 		"iat":   now.Unix(),
 		"scope": "read:current_user other:scope",
+		"iss":   "https://test.auth0.com/",
+		"aud":   "https://test.auth0.com/api/v2/",
 	})
-	validTokenString, err := validToken.SignedString([]byte("secret"))
+	validTokenString, err := validToken.SignedString(privateKey)
 	require.NoError(t, err)
 
 	tests := []struct {

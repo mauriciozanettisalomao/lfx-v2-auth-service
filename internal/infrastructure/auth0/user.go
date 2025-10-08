@@ -16,13 +16,12 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
-	jwtparser "github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 const (
-	userMetadataRequiredScope = "update:current_user_metadata"
-	userReadRequiredScope     = "read:current_user"
+	userUpdateRequiredScope = "update:current_user_metadata"
+	userReadRequiredScope   = "read:current_user"
 
 	usernameFilter = "Username-Password-Authentication"
 )
@@ -41,6 +40,8 @@ type Config struct {
 	Domain string
 	// M2MTokenManager for machine-to-machine authentication
 	M2MTokenManager *TokenManager
+	// JWTVerificationConfig for JWT signature verification
+	JWTVerificationConfig *JWTVerificationConfig
 }
 
 // userUpdateRequest represents the request body for updating a user in Auth0
@@ -52,32 +53,6 @@ type userReaderWriter struct {
 	config        Config
 	httpClient    *httpclient.Client
 	errorResponse *ErrorResponse
-}
-
-func (u *userReaderWriter) jwtVerify(ctx context.Context, user *model.User) error {
-	// Configure JWT parsing options
-	opts := &jwtparser.ParseOptions{
-		RequireExpiration: true,
-		RequiredScopes:    []string{userMetadataRequiredScope},
-		AllowBearerPrefix: true,
-		RequireSubject:    true,
-	}
-
-	// Parse and validate the JWT token
-	claims, err := jwtparser.ParseUnverified(ctx, user.Token, opts)
-	if err != nil {
-		return err
-	}
-
-	// Extract the user_id from the 'sub' claim
-	user.UserID = claims.Subject
-
-	slog.DebugContext(ctx, "JWT validation successful",
-		"user_id", user.UserID,
-		"expires_at", claims.ExpiresAt,
-		"scope", claims.Scope)
-
-	return nil
 }
 
 func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
@@ -242,18 +217,10 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 
 	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
 
-	// Configure JWT parsing options for read scope
-	opts := &jwtparser.ParseOptions{
-		RequireExpiration: true,
-		RequiredScopes:    []string{userReadRequiredScope},
-		AllowBearerPrefix: true,
-		RequireSubject:    true,
-	}
-
-	// Parse and validate the JWT token
-	claims, err := jwtparser.ParseUnverified(ctx, input, opts)
+	// Verify JWT token with read scope
+	claims, err := u.config.JWTVerificationConfig.JWTVerify(ctx, input, userReadRequiredScope)
 	if err != nil {
-		slog.ErrorContext(ctx, "JWT verification failed for metadata lookup",
+		slog.ErrorContext(ctx, "JWT signature verification failed for metadata lookup",
 			"error", err,
 		)
 		return nil, err
@@ -261,11 +228,9 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 
 	// Clean the token by removing Bearer prefix if present
 	cleanToken := strings.TrimSpace(input)
-	if opts.AllowBearerPrefix {
-		parts := strings.Fields(input)
-		if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
-			cleanToken = strings.Join(parts[1:], " ")
-		}
+	parts := strings.Fields(input)
+	if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
+		cleanToken = strings.Join(parts[1:], " ")
 	}
 
 	// Create user object with cleaned token and extracted claims
@@ -275,21 +240,22 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 		Sub:    claims.Subject,
 	}
 
-	slog.DebugContext(ctx, "JWT validation successful for metadata lookup",
-		"user_id", user.UserID,
+	slog.DebugContext(ctx, "JWT signature verification successful for metadata lookup",
 		"sub", user.Sub,
-		"expires_at", claims.ExpiresAt,
-		"scope", claims.Scope)
+	)
 
 	return user, nil
 }
 
 func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*model.User, error) {
 
-	if err := u.jwtVerify(ctx, user); err != nil {
-		slog.ErrorContext(ctx, "jwt verify failed", "error", err)
-		return nil, err
+	claims, errJwtVerify := u.config.JWTVerificationConfig.JWTVerify(ctx, user.Token, userUpdateRequiredScope)
+	if errJwtVerify != nil {
+		slog.ErrorContext(ctx, "jwt verify failed", "error", errJwtVerify)
+		return nil, errJwtVerify
 	}
+	// Extract the user_id from the 'sub' claim
+	user.UserID = claims.Subject
 
 	// Validate configuration before making HTTP requests
 	if strings.TrimSpace(u.config.Domain) == "" {
@@ -348,9 +314,24 @@ func NewUserReaderWriter(ctx context.Context, httpConfig httpclient.Config, auth
 
 	auth0Config.M2MTokenManager = m2mTokenManager
 
+	// Create httpClient first
+	httpClient := httpclient.NewClient(httpConfig)
+
+	// JWT verification config is required
+	if auth0Config.JWTVerificationConfig == nil {
+		jwtConfig, errNewJWTVerificationConfig := NewJWTVerificationConfig(ctx, auth0Config.Domain, httpClient)
+		if errNewJWTVerificationConfig != nil {
+			return nil, errors.NewUnexpected("failed to create JWT verification config", errNewJWTVerificationConfig)
+		}
+		if jwtConfig == nil {
+			return nil, errors.NewUnexpected("JWT verification configuration is required but could not be created")
+		}
+		auth0Config.JWTVerificationConfig = jwtConfig
+	}
+
 	return &userReaderWriter{
 		config:        auth0Config,
-		httpClient:    httpclient.NewClient(httpConfig),
+		httpClient:    httpClient,
 		errorResponse: NewErrorResponse(),
 	}, nil
 }

@@ -69,10 +69,6 @@ func WithDescription(description string) RequestOption {
 
 // Call makes an HTTP call with a configured data
 func (a *apiRequest) Call(ctx context.Context, resp any) (int, error) {
-	if a.Token == "" {
-		return -1, errors.NewValidation("no authentication token available (neither user token nor M2M token)")
-	}
-
 	if a.URL == "" {
 		return -1, errors.NewValidation("URL is required")
 	}
