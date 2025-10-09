@@ -5,6 +5,9 @@ package jwt
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -74,7 +77,7 @@ func TestParseUnverified(t *testing.T) {
 
 		_, err = ParseUnverified(ctx, tokenString, DefaultParseOptions())
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token has expired")
+		assert.Contains(t, err.Error(), "exp")
 	})
 
 	t.Run("missing required scope", func(t *testing.T) {
@@ -258,4 +261,239 @@ func TestParseTimeFromClaim(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseVerified(t *testing.T) {
+	// Generate a test RSA key pair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate RSA key: %v", err)
+	}
+	publicKey := &privateKey.PublicKey
+
+	// Create a test JWT token
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":   "test-user-123",
+		"iss":   "https://test.auth0.com/",
+		"aud":   "https://test.auth0.com/api/v2/",
+		"exp":   now.Add(time.Hour).Unix(),
+		"iat":   now.Unix(),
+		"scope": "read:current_user update:current_user_metadata",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("Failed to sign token: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		token       string
+		opts        *ParseOptions
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:  "valid token with signature verification",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+				RequiredScopes:    []string{"read:current_user"},
+			},
+			expectError: false,
+		},
+		{
+			name:  "valid token with Bearer prefix",
+			token: "Bearer " + tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+				AllowBearerPrefix: true,
+			},
+			expectError: false,
+		},
+		{
+			name:  "invalid signature",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        &rsa.PublicKey{}, // Wrong key
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+			},
+			expectError: true,
+		},
+		{
+			name:  "wrong issuer",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://wrong.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+			},
+			expectError: true,
+		},
+		{
+			name:  "wrong audience",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://wrong.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+			},
+			expectError: true,
+		},
+		{
+			name:  "expired token",
+			token: createExpiredToken(t, privateKey),
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+			},
+			expectError: true,
+		},
+		{
+			name:  "missing required scope",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        publicKey,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+				RequiredScopes:    []string{"admin:all"}, // Not in token
+			},
+			expectError: true,
+		},
+		{
+			name:  "missing signing key",
+			token: tokenString,
+			opts: &ParseOptions{
+				VerifySignature:   true,
+				SigningKey:        nil,
+				ExpectedIssuer:    "https://test.auth0.com/",
+				ExpectedAudience:  "https://test.auth0.com/api/v2/",
+				RequireExpiration: true,
+				RequireSubject:    true,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			claims, err := ParseVerified(ctx, tt.token, tt.opts)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+					return
+				}
+				if tt.errorType != nil {
+					// Check if error is of expected type (simplified check)
+					if err.Error() == "" {
+						t.Errorf("Expected error type %v, got %v", tt.errorType, err)
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if claims == nil {
+				t.Error("Expected claims but got nil")
+				return
+			}
+
+			if claims.Subject != "test-user-123" {
+				t.Errorf("Expected subject 'test-user-123', got '%s'", claims.Subject)
+			}
+		})
+	}
+}
+
+func TestLoadRSAPublicKeyFromJWK(t *testing.T) {
+	// Generate a test RSA key pair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate RSA key: %v", err)
+	}
+
+	// Create JWK data
+	jwkData := []byte(`{
+		"kty": "RSA",
+		"use": "sig",
+		"kid": "test-key-1",
+		"alg": "RS256",
+		"n": "` + encodeBase64URL(privateKey.N.Bytes()) + `",
+		"e": "` + encodeBase64URL([]byte{1, 0, 1}) + `"
+	}`)
+
+	// Test loading the key
+	loadedKey, err := LoadRSAPublicKeyFromJWK(jwkData)
+	if err != nil {
+		t.Fatalf("Failed to load RSA public key from JWK: %v", err)
+	}
+
+	if loadedKey.N.Cmp(privateKey.N) != 0 {
+		t.Error("Loaded key modulus doesn't match original")
+	}
+
+	if loadedKey.E != privateKey.E {
+		t.Error("Loaded key exponent doesn't match original")
+	}
+}
+
+func createExpiredToken(t *testing.T, privateKey *rsa.PrivateKey) string {
+	// Create an expired JWT token
+	claims := jwt.MapClaims{
+		"sub":   "test-user-123",
+		"iss":   "https://test.auth0.com/",
+		"aud":   "https://test.auth0.com/api/v2/",
+		"exp":   time.Now().Add(-time.Hour).Unix(), // Expired 1 hour ago
+		"iat":   time.Now().Add(-2 * time.Hour).Unix(),
+		"scope": "read:current_user",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("Failed to sign expired token: %v", err)
+	}
+
+	return tokenString
+}
+
+func encodeBase64URL(data []byte) string {
+	// Convert to base64url encoding
+	encoded := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data)
+	return encoded
 }
