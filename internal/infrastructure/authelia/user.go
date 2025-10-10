@@ -146,12 +146,12 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 
 	user := &model.User{}
 
-	// First, try to parse as Authelia token (starts with 'authelia') or JWT token
+	// First, try to parse as Authelia token (starts with 'authelia')
 	if strings.HasPrefix(input, "authelia") {
 		// Handle Authelia token
 		userInfo, err := u.fetchOIDCUserInfo(ctx, input)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to fetch OIDC userinfo, treating as username/sub",
+			slog.ErrorContext(ctx, "failed to fetch OIDC userinfo",
 				"error", err,
 			)
 			return nil, err
