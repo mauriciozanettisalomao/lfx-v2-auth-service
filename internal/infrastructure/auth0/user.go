@@ -16,6 +16,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
@@ -81,6 +82,10 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 	}
 
 	if user.Token == "" {
+		slog.DebugContext(ctx, "getting M2M token",
+			"criteria", criteria,
+		)
+
 		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
 		if errGetToken != nil {
 			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
@@ -162,6 +167,18 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 
 	slog.DebugContext(ctx, "getting user", "user_id", user.UserID)
 
+	if user.Token == "" {
+		slog.DebugContext(ctx, "getting M2M token",
+			"user_id", redaction.Redact(user.UserID),
+		)
+
+		m2mToken, errGetToken := u.config.M2MTokenManager.GetToken(ctx)
+		if errGetToken != nil {
+			return nil, errors.NewUnexpected("failed to get M2M token", errGetToken)
+		}
+		user.Token = m2mToken
+	}
+
 	// If we don't have a user ID, we can't fetch the user
 	if user.UserID == "" {
 		return nil, errors.NewValidation("user_id is required to get user")
@@ -207,7 +224,7 @@ func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 }
 
 // MetadataLookup prepares the user for metadata lookup based on the input
-// Verifies JWT token with read:current_user scope and extracts user information
+// Accepts JWT token, username, or sub
 func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
 	// Validate input
 	input = strings.TrimSpace(input)
@@ -217,36 +234,51 @@ func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*m
 
 	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
 
-	// Verify JWT token with read scope
-	if u.config.JWTVerificationConfig == nil {
-		return nil, errors.NewValidation("JWT verification configuration is required")
-	}
+	user := &model.User{}
 
-	claims, err := u.config.JWTVerificationConfig.JWTVerify(ctx, input, userReadRequiredScope)
-	if err != nil {
-		slog.ErrorContext(ctx, "JWT signature verification failed for metadata lookup",
-			"error", err,
+	// First, try to parse as JWT token to extract the sub
+	if cleanToken, isJWT := jwt.LooksLikeJWT(input); isJWT {
+
+		slog.DebugContext(ctx, "jwt strategy", "input", redaction.Redact(input))
+
+		// Verify JWT token with read scope
+		if u.config.JWTVerificationConfig == nil {
+			return nil, errors.NewValidation("JWT verification configuration is required")
+		}
+
+		claims, err := u.config.JWTVerificationConfig.JWTVerify(ctx, cleanToken, userReadRequiredScope)
+		if err != nil {
+			slog.ErrorContext(ctx, "JWT signature verification failed",
+				"error", err,
+			)
+			return nil, err
+		}
+
+		// Successfully verified JWT token
+		user.Token = cleanToken
+		user.UserID = claims.Subject
+		user.Sub = claims.Subject
+
+		slog.DebugContext(ctx, "JWT signature verification successful for metadata lookup",
+			"sub", user.Sub,
 		)
-		return nil, err
+		return user, nil
+
 	}
 
-	// Clean the token by removing Bearer prefix if present
-	cleanToken := strings.TrimSpace(input)
-	parts := strings.Fields(input)
-	if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
-		cleanToken = strings.Join(parts[1:], " ")
-	}
+	// Determine lookup strategy based on input format
+	switch {
+	case strings.Contains(input, "|"):
+		// Input contains "|", use as sub for canonical lookup
+		user.UserID = input
+		slog.DebugContext(ctx, "canonical lookup strategy", "sub", redaction.Redact(input))
 
-	// Create user object with cleaned token and extracted claims
-	user := &model.User{
-		Token:  cleanToken,
-		UserID: claims.Subject,
-		Sub:    claims.Subject,
+	default:
+		// username search
+		user.Username = input
+		user.UserID = ""
+		slog.DebugContext(ctx, "username search strategy", "username", redaction.Redact(input))
 	}
-
-	slog.DebugContext(ctx, "JWT signature verification successful for metadata lookup",
-		"sub", user.Sub,
-	)
 
 	return user, nil
 }

@@ -162,15 +162,42 @@ To retrieve user metadata, send a NATS request to the following subject:
 **Subject:** `lfx.auth-service.user_metadata.read`  
 **Pattern:** Request/Reply
 
-The service takes a token and validates/retrieves user data from the target identity provider based on the `USER_REPOSITORY_TYPE` environment variable configuration.
+The service supports a **hybrid approach** for user metadata retrieval, accepting multiple input types and automatically determining the appropriate lookup strategy based on the input format.
+
+#### Hybrid Input Support
+
+The service intelligently handles different input types:
+
+1. **JWT Tokens** (Auth0) or **Authelia Tokens** (Authelia)
+2. **Subject Identifiers** (canonical user IDs)
+3. **Usernames**
 
 ##### Request Payload
 
-The request payload should be a token (no JSON wrapping required):
+The request payload can be any of the following formats (no JSON wrapping required):
 
+**JWT Token (Auth0):**
 ```
 eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
+
+**Subject Identifier:**
+```
+auth0|123456789
+```
+
+**Username:**
+```
+john.doe
+```
+
+##### Lookup Strategy
+
+The service automatically determines the lookup strategy based on input format:
+
+- **Token Strategy**: If input is a JWT/Authelia token, validates the token and extracts the subject identifier
+- **Canonical Lookup**: If input contains `|` (pipe character) or is a UUID, treats as subject identifier for direct lookup
+- **Username Search**: If input doesn't match above patterns, treats as username for search lookup
 
 ##### Reply
 
@@ -218,12 +245,19 @@ The service returns a structured reply with user metadata:
 ##### Example using NATS CLI
 
 ```bash
-# Retrieve user metadata using token
+# Retrieve user metadata using JWT token
 nats request lfx.auth-service.user_metadata.read "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+# Retrieve user metadata using subject identifier
+nats request lfx.auth-service.user_metadata.read "auth0|123456789"
+
+# Retrieve user metadata using username
+nats request lfx.auth-service.user_metadata.read "john.doe"
 ```
 
 **Important Notes:**
-- The service validates the token and extracts user information from the target identity provider
+- The service automatically detects input type and applies the appropriate lookup strategy
+- JWT tokens are validated for signature and expiration before extracting subject information
 - The target identity provider is determined by the `USER_REPOSITORY_TYPE` environment variable
 - For detailed Auth0-specific behavior and limitations, see: [`internal/infrastructure/auth0/README.md`](internal/infrastructure/auth0/README.md)
 - For detailed Authelia-specific behavior and SUB management, see: [`internal/infrastructure/authelia/README.md`](internal/infrastructure/authelia/README.md)

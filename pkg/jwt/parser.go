@@ -267,20 +267,6 @@ func ExtractSubject(ctx context.Context, tokenString string) (string, error) {
 	return claims.Subject, nil
 }
 
-// parseTimeFromClaim handles different numeric types for time claims
-func parseTimeFromClaim(claim any) (time.Time, error) {
-	switch v := claim.(type) {
-	case float64:
-		return time.Unix(int64(v), 0), nil
-	case int64:
-		return time.Unix(v, 0), nil
-	case int:
-		return time.Unix(int64(v), 0), nil
-	default:
-		return time.Time{}, fmt.Errorf("unsupported time claim type: %T", claim)
-	}
-}
-
 // validateSubject checks if the token has a valid subject
 func validateSubject(claims *Claims) error {
 	if strings.TrimSpace(claims.Subject) == "" {
@@ -339,7 +325,7 @@ func validateAudience(claims *Claims, expectedAudience string) error {
 	}
 
 	if claims.Audience != expectedAudience {
-		return errors.NewValidation(fmt.Sprintf("invalid audience '%s', expected '%s'", claims.Audience, expectedAudience))
+		return errors.NewValidation("invalid audience")
 	}
 
 	return nil
@@ -371,6 +357,28 @@ func (c *Claims) HasScope(scope string) bool {
 	}
 	scopes := strings.Fields(c.Scope)
 	return slices.Contains(scopes, scope)
+}
+
+// LooksLikeJWT checks if a string looks like a JWT token by attempting to parse it
+// without verification. Returns the cleaned token and true if the string can be parsed as a valid JWT structure.
+func LooksLikeJWT(tokenStr string) (string, bool) {
+	if strings.TrimSpace(tokenStr) == "" {
+		return "", false
+	}
+
+	// Remove optional Bearer prefix (case-insensitive) and trim
+	cleanToken := strings.TrimSpace(tokenStr)
+	parts := strings.Fields(tokenStr)
+	if len(parts) > 1 && strings.EqualFold(parts[0], "Bearer") {
+		cleanToken = strings.Join(parts[1:], " ")
+	}
+
+	// Try to parse the token without verification
+	_, err := jwt.Parse([]byte(cleanToken), jwt.WithVerify(false))
+	if err == jwt.ErrInvalidJWT() {
+		return cleanToken, false
+	}
+	return cleanToken, true
 }
 
 // LoadRSAPublicKeyFromJWK loads an RSA public key from JWK (JSON Web Key) format

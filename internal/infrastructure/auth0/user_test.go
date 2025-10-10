@@ -697,17 +697,17 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 		{
 			name:        "invalid JWT token",
 			input:       "invalid-token",
-			expectError: true,
+			expectError: false, // Now handled as username lookup
 		},
 		{
 			name:        "non-JWT input",
 			input:       "test@example.com",
-			expectError: true,
+			expectError: false, // Now handled as email lookup
 		},
 		{
 			name:        "username input",
 			input:       "testuser",
-			expectError: true,
+			expectError: false, // Now handled as username lookup
 		},
 		{
 			name:        "valid JWT token with read:current_user scope",

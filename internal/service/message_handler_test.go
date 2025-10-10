@@ -887,6 +887,7 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 		input              string
 		mockMetadataLookup func(ctx context.Context, input string) (*model.User, error)
 		mockGetUser        func(ctx context.Context, user *model.User) (*model.User, error)
+		mockSearchUser     func(ctx context.Context, user *model.User, criteria string) (*model.User, error)
 		expectedError      bool
 		expectedData       *model.UserMetadata
 		description        string
@@ -939,10 +940,13 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 					Username: "john.doe",
 				}, nil
 			},
-			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
+			mockSearchUser: func(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 				// Verify the user was prepared correctly for search lookup
 				if user.Username != "john.doe" {
 					t.Errorf("User not prepared correctly for search lookup: Username=%q", user.Username)
+				}
+				if criteria != constants.CriteriaTypeUsername {
+					t.Errorf("Expected criteria %s, got %s", constants.CriteriaTypeUsername, criteria)
 				}
 				return &model.User{
 					UserID:   "auth0|987654321",
@@ -958,7 +962,7 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 				Name:         converters.StringPtr("John Doe"),
 				Organization: converters.StringPtr("Example Corp"),
 			},
-			description: "Should use GetUser for search lookup and return user metadata",
+			description: "Should use SearchUser for search lookup and return user metadata",
 		},
 		{
 			name:  "canonical lookup user not found",
@@ -984,7 +988,7 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 					Username: "nonexistent.user",
 				}, nil
 			},
-			mockGetUser: func(ctx context.Context, user *model.User) (*model.User, error) {
+			mockSearchUser: func(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 				return nil, errors.NewNotFound("user not found by criteria")
 			},
 			expectedError: true,
@@ -1032,6 +1036,7 @@ func TestMessageHandlerOrchestrator_GetUserMetadata(t *testing.T) {
 			// Create mock user reader
 			mockReader := &mockUserServiceReader{
 				getUserFunc:        tt.mockGetUser,
+				searchUserFunc:     tt.mockSearchUser,
 				metadataLookupFunc: tt.mockMetadataLookup,
 			}
 

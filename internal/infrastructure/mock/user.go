@@ -13,7 +13,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
-	jwtparser "github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -216,8 +216,8 @@ func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.U
 	user := &model.User{}
 
 	// First, try to parse as JWT token to extract the sub
-	if strings.HasPrefix(input, "eyJ") { // JWT tokens typically start with "eyJ"
-		sub, err := u.extractSubFromJWT(ctx, input)
+	if cleanToken, isJWT := jwt.LooksLikeJWT(input); isJWT {
+		sub, err := u.extractSubFromJWT(ctx, cleanToken)
 		if err != nil {
 			slog.WarnContext(ctx, "mock: failed to parse JWT, treating as regular input", "error", err)
 			// If JWT parsing fails, fall back to regular input processing
@@ -259,7 +259,7 @@ func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.U
 // extractSubFromJWT extracts the 'sub' claim from a JWT token
 func (u *userWriter) extractSubFromJWT(ctx context.Context, tokenString string) (string, error) {
 	// Use the JWT utility to extract the subject
-	subject, err := jwtparser.ExtractSubject(ctx, tokenString)
+	subject, err := jwt.ExtractSubject(ctx, tokenString)
 	if err != nil {
 		return "", err
 	}
