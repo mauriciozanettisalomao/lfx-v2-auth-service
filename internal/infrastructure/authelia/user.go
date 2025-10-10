@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/infrastructure/nats"
@@ -134,36 +135,46 @@ func (a *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*mode
 }
 
 // MetadataLookup prepares the user for metadata lookup based on the input
-// Returns true if should use canonical lookup, false if should use search
+// Accepts Authelia token, username, or sub
 func (u *userReaderWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
 
 	if input == "" {
 		return nil, errors.NewValidation("input is required")
 	}
 
-	userInfo, err := u.fetchOIDCUserInfo(ctx, input)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to fetch OIDC userinfo",
-			"error", err,
-		)
-		return nil, err
-	}
+	slog.DebugContext(ctx, "metadata lookup", "input", redaction.Redact(input))
 
 	user := &model.User{}
-	if userInfo != nil {
-		if userInfo.Sub != "" {
-			slog.DebugContext(ctx, "found sub in OIDC userinfo",
-				"sub", userInfo.Sub,
+
+	// First, try to parse as Authelia token (starts with 'authelia') or JWT token
+	if strings.HasPrefix(input, "authelia") {
+		// Handle Authelia token
+		userInfo, err := u.fetchOIDCUserInfo(ctx, input)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to fetch OIDC userinfo, treating as username/sub",
+				"error", err,
 			)
-			user.Sub = userInfo.Sub
+			return nil, err
 		}
-		if userInfo.PreferredUsername != "" {
-			slog.DebugContext(ctx, "found username in OIDC userinfo",
-				"username", userInfo.PreferredUsername,
-			)
-			user.Username = userInfo.PreferredUsername
-		}
+		user.Token = input
+		user.UserID = userInfo.Sub
+		user.Sub = userInfo.Sub
+		user.Username = userInfo.PreferredUsername
+		return user, nil
 	}
+
+	sub, errParseUUID := uuid.Parse(input)
+	if errParseUUID == nil {
+		user.UserID = sub.String()
+		user.Sub = user.UserID
+		slog.DebugContext(ctx, "canonical lookup strategy", "sub", redaction.Redact(input))
+		return user, nil
+	}
+
+	// username search
+	user.Username = input
+	user.Sub = input
+	slog.DebugContext(ctx, "username search strategy", "username", redaction.Redact(input))
 
 	return user, nil
 }

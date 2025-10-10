@@ -234,35 +234,6 @@ func TestClaimsHelpers(t *testing.T) {
 	})
 }
 
-func TestParseTimeFromClaim(t *testing.T) {
-	baseTime := time.Unix(1640995200, 0) // 2022-01-01 00:00:00 UTC
-
-	tests := []struct {
-		name     string
-		input    interface{}
-		expected time.Time
-		hasError bool
-	}{
-		{"float64", float64(1640995200), baseTime, false},
-		{"int64", int64(1640995200), baseTime, false},
-		{"int", int(1640995200), baseTime, false},
-		{"string", "1640995200", time.Time{}, true},
-		{"nil", nil, time.Time{}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseTimeFromClaim(tt.input)
-			if tt.hasError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestParseVerified(t *testing.T) {
 	// Generate a test RSA key pair
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -496,4 +467,87 @@ func encodeBase64URL(data []byte) string {
 	// Convert to base64url encoding
 	encoded := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data)
 	return encoded
+}
+
+func TestLooksLikeJWT(t *testing.T) {
+	tests := []struct {
+		name           string
+		tokenStr       string
+		expectedToken  string
+		expectedResult bool
+		description    string
+	}{
+		{
+			name:           "empty string",
+			tokenStr:       "",
+			expectedToken:  "",
+			expectedResult: false,
+			description:    "Empty string should not be recognized as JWT",
+		},
+		{
+			name:           "whitespace only",
+			tokenStr:       "   ",
+			expectedToken:  "",
+			expectedResult: false,
+			description:    "Whitespace-only string should not be recognized as JWT",
+		},
+		{
+			name:           "valid JWT without Bearer prefix",
+			tokenStr:       "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODkiLCJleHAiOjE2MzQ1Njc4OTAsImlhdCI6MTYzNDU2NDI5MCwic2NvcGUiOiJyZWFkOmN1cnJlbnRfdXNlciJ9.signature",
+			expectedToken:  "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODkiLCJleHAiOjE2MzQ1Njc4OTAsImlhdCI6MTYzNDU2NDI5MCwic2NvcGUiOiJyZWFkOmN1cnJlbnRfdXNlciJ9.signature",
+			expectedResult: true,
+			description:    "Valid JWT structure should be recognized",
+		},
+		{
+			name:           "valid JWT with Bearer prefix",
+			tokenStr:       "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODkiLCJleHAiOjE2MzQ1Njc4OTAsImlhdCI6MTYzNDU2NDI5MCwic2NvcGUiOiJyZWFkOmN1cnJlbnRfdXNlciJ9.signature",
+			expectedToken:  "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODkiLCJleHAiOjE2MzQ1Njc4OTAsImlhdCI6MTYzNDU2NDI5MCwic2NvcGUiOiJyZWFkOmN1cnJlbnRfdXNlciJ9.signature",
+			expectedResult: true,
+			description:    "Valid JWT with Bearer prefix should be recognized and cleaned",
+		},
+		{
+			name:           "invalid JWT - only two parts",
+			tokenStr:       "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODki",
+			expectedToken:  "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHwxMjM0NTY3ODki",
+			expectedResult: false,
+			description:    "JWT with only two parts should not be recognized",
+		},
+		{
+			name:           "invalid JWT - malformed structure",
+			tokenStr:       "not.a.valid.jwt",
+			expectedToken:  "not.a.valid.jwt",
+			expectedResult: false,
+			description:    "Malformed JWT structure should not be recognized",
+		},
+		{
+			name:           "username - should not be JWT",
+			tokenStr:       "john.doe",
+			expectedToken:  "john.doe",
+			expectedResult: false,
+			description:    "Username should not be recognized as JWT",
+		},
+		{
+			name:           "sub with pipe - should not be JWT",
+			tokenStr:       "auth0|123456789",
+			expectedToken:  "auth0|123456789",
+			expectedResult: false,
+			description:    "Sub with pipe should not be recognized as JWT",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanToken, isJWT := LooksLikeJWT(tt.tokenStr)
+
+			// Check the boolean result
+			if isJWT != tt.expectedResult {
+				t.Errorf("LooksLikeJWT() %s: result = %v, expected %v", tt.name, isJWT, tt.expectedResult)
+			}
+
+			// Check the cleaned token
+			if cleanToken != tt.expectedToken {
+				t.Errorf("LooksLikeJWT() %s: cleanToken = %q, expected %q", tt.name, cleanToken, tt.expectedToken)
+			}
+		})
+	}
 }

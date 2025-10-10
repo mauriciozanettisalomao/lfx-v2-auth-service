@@ -359,7 +359,7 @@ func TestMetadataLookupWithoutJWTVerificationConfig(t *testing.T) {
 		{
 			name:        "missing JWT verification config for metadata lookup",
 			token:       "any-token",
-			expectError: true,
+			expectError: false, // Now handled as username lookup with M2M token
 		},
 	}
 

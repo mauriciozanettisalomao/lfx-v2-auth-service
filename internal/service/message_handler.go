@@ -128,7 +128,14 @@ func (m *messageHandlerOrchestrator) GetUserMetadata(ctx context.Context, msg po
 		return m.errorResponse(errMetadataLookup.Error()), nil
 	}
 
-	userRetrieved, errGetUser := m.userReader.GetUser(ctx, user)
+	search := func() (*model.User, error) {
+		if user.UserID != "" {
+			return m.userReader.GetUser(ctx, user)
+		}
+		return m.userReader.SearchUser(ctx, user, constants.CriteriaTypeUsername)
+	}
+
+	userRetrieved, errGetUser := search()
 	if errGetUser != nil {
 		slog.ErrorContext(ctx, "error getting user metadata",
 			"error", errGetUser,

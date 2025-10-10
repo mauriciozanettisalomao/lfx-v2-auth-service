@@ -14,6 +14,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	jwtparser "github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 // JWTVerificationConfig holds configuration for JWT signature verification
@@ -61,7 +62,7 @@ func (j *JWTVerificationConfig) JWTVerify(ctx context.Context, token string, req
 	}
 
 	slog.DebugContext(ctx, "JWT signature verification successful",
-		"user_id", claims.Subject,
+		"user_id", redaction.Redact(claims.Subject),
 		"issuer", claims.Issuer,
 		"audience", claims.Audience,
 		"expires_at", claims.ExpiresAt,

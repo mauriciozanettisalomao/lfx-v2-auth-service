@@ -53,7 +53,7 @@ You can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
 
 1. Go to [https://www.jwt.io](https://www.jwt.io)
 2. Navigate to the **JWT Encoder** tab
-3. Use the following configuration:
+3. Use the following configuration (with a valid `exp`):
 
 **Header:**
 ```json
@@ -69,7 +69,8 @@ You can generate JWT tokens using the [JWT.io](https://www.jwt.io) online tool:
   "sub": "auth0|zephyr001",
   "name": "Zephyr Stormwind",
   "admin": true,
-  "iat": 1516239022
+  "iat": 1516239022,
+  "exp": 1759941573
 }
 ```
 

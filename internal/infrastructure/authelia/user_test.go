@@ -97,8 +97,7 @@ func TestUserReaderWriter_MetadataLookup(t *testing.T) {
 		{
 			name:        "invalid token - should fail OIDC fetch",
 			input:       "invalid-token",
-			expectError: true,
-			// The actual error message will depend on the OIDC configuration
+			expectError: false, // Now handled as username lookup
 		},
 	}
 
