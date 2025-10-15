@@ -204,6 +204,19 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	return &updatedUser, nil
 }
 
+func (u *userWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+	slog.DebugContext(ctx, "mock: sending alternate email verification", "alternate_email", alternateEmail)
+	return nil
+}
+
+func (u *userWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
+	slog.DebugContext(ctx, "mock: verifying alternate email", "email", email.Email, "otp", email.OTP)
+	// For mock implementation, return a basic user object
+	return &model.User{
+		PrimaryEmail: email.Email,
+	}, nil
+}
+
 func (u *userWriter) MetadataLookup(ctx context.Context, input string) (*model.User, error) {
 	slog.DebugContext(ctx, "mock: metadata lookup", "input", input)
 

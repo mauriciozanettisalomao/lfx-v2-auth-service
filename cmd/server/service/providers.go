@@ -191,6 +191,9 @@ func QueueSubscriptions(ctx context.Context) error {
 			service.WithUserReaderForMessageHandler(
 				userReaderWriter,
 			),
+			service.WithEmailHandlerForMessageHandler(
+				userReaderWriter,
+			),
 		),
 	}
 
@@ -206,6 +209,8 @@ func QueueSubscriptions(ctx context.Context) error {
 		constants.UserEmailToUserSubject:    messageHandlerService.HandleMessage,
 		constants.UserEmailToSubSubject:     messageHandlerService.HandleMessage,
 		constants.UserMetadataReadSubject:   messageHandlerService.HandleMessage,
+		constants.EmailLinkingStartSubject:  messageHandlerService.HandleMessage,
+		constants.EmailLinkingVerifySubject: messageHandlerService.HandleMessage,
 		// Add more subjects here as needed
 	}
 

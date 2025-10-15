@@ -1,0 +1,97 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+package auth0
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/auth0/go-auth0/authentication/oauth"
+	"github.com/auth0/go-auth0/authentication/passwordless"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+)
+
+// PasswordlessStartResponse represents the response from Auth0 passwordless start endpoint
+type PasswordlessStartResponse struct {
+	ID            string `json:"_id"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+}
+
+// TokenResponse represents the response from Auth0 token endpoint
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	IDToken      string `json:"id_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Scope        string `json:"scope"`
+}
+
+// StartPasswordlessFlow initiates a passwordless authentication flow by sending an OTP to the user's email
+// This is used in the alternate email linking flow to send a verification code to the alternate email address.
+func StartPasswordlessFlow(ctx context.Context, config Config, email string) (*PasswordlessStartResponse, error) {
+
+	// Use SDK's passwordless SendEmail method
+	request := passwordless.SendEmailRequest{
+		Email:      email,
+		Connection: "email",
+		Send:       "code",
+	}
+
+	response, err := config.M2MTokenManager.authConfig.Passwordless.SendEmail(ctx, request)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to send passwordless email",
+			"error", err,
+			"email", email)
+		return nil, errors.NewUnexpected("failed to start passwordless flow", err)
+	}
+
+	slog.DebugContext(ctx, "passwordless flow started successfully",
+		"email", response.Email,
+		"id", response.ID,
+		"email_verified", response.EmailVerified)
+
+	return &PasswordlessStartResponse{
+		ID:            response.ID,
+		Email:         response.Email,
+		EmailVerified: response.EmailVerified,
+	}, nil
+}
+
+// ExchangeOTPForToken exchanges a passwordless OTP for tokens using private key JWT authentication
+// This is used for the alternate email linking flow where a user verifies their
+// alternate email address by entering a one-time password (OTP) sent to their email.
+func ExchangeOTPForToken(ctx context.Context, config Config, email, otp string) (*TokenResponse, error) {
+	// Use SDK's passwordless LoginWithEmail method
+	request := passwordless.LoginWithEmailRequest{
+		Email: email,
+		Code:  otp,
+		Realm: "email",
+		Scope: "openid email profile",
+	}
+
+	tokenSet, err := config.M2MTokenManager.authConfig.Passwordless.LoginWithEmail(ctx, request, oauth.IDTokenValidationOptions{})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to exchange OTP for token",
+			"error", err,
+			"email", email)
+		return nil, errors.NewUnexpected("failed to exchange OTP for token", err)
+	}
+
+	slog.DebugContext(ctx, "OTP exchange successful",
+		"token_type", tokenSet.TokenType,
+		"expires_in", tokenSet.ExpiresIn,
+		"has_id_token", tokenSet.IDToken != "",
+		"has_refresh_token", tokenSet.RefreshToken != "")
+
+	return &TokenResponse{
+		AccessToken:  tokenSet.AccessToken,
+		IDToken:      tokenSet.IDToken,
+		TokenType:    tokenSet.TokenType,
+		ExpiresIn:    int64(tokenSet.ExpiresIn),
+		RefreshToken: tokenSet.RefreshToken,
+		Scope:        tokenSet.Scope,
+	}, nil
+}

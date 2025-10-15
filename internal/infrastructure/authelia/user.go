@@ -263,6 +263,16 @@ func (a *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 	return existingUser.User, nil
 }
 
+func (a *userReaderWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+	slog.DebugContext(ctx, "sending alternate email verification", "alternate_email", alternateEmail)
+	return nil
+}
+
+func (a *userReaderWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
+	slog.DebugContext(ctx, "verifying alternate email", "email", email.Email, "otp", email.OTP)
+	return nil, nil
+}
+
 // NewUserReaderWriter creates a new Authelia User repository
 func NewUserReaderWriter(ctx context.Context, config map[string]string, natsClient *nats.NATSClient) (port.UserReaderWriter, error) {
 	// Set defaults in case of not set

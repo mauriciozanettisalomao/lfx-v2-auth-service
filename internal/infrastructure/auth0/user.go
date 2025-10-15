@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
@@ -23,15 +22,14 @@ import (
 const (
 	userUpdateRequiredScope = "update:current_user_metadata"
 	userReadRequiredScope   = "read:current_user"
-
-	usernameFilter = "Username-Password-Authentication"
 )
 
 var (
 	// criteriaEndpointMapping is a map of criteria types and their corresponding API endpoints
 	criteriaEndpointMapping = map[string]string{
-		constants.CriteriaTypeEmail:    "users-by-email?email=%s",
-		constants.CriteriaTypeUsername: `users?q=identities.user_id:%s&search_engine=v3`,
+		constants.CriteriaTypeEmail:          "users-by-email?email=%s",
+		constants.CriteriaTypeUsername:       `users?q=identities.user_id:%s&search_engine=v3`,
+		constants.CriteriaTypeAlternateEmail: `users?q=identities.profileData.email:%s&search_engine=v3`,
 	}
 )
 
@@ -63,23 +61,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 		return nil, errors.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
 	}
 
-	param := func(criteriaType string) []any {
-		switch criteriaType {
-		case constants.CriteriaTypeEmail:
-			slog.DebugContext(ctx, "searching user",
-				"criteria", criteria,
-				"email", redaction.RedactEmail(user.PrimaryEmail),
-			)
-			return []any{url.QueryEscape(strings.ToLower(strings.TrimSpace(user.PrimaryEmail)))}
-		case constants.CriteriaTypeUsername:
-			slog.DebugContext(ctx, "searching user",
-				"criteria", criteria,
-				"username", redaction.Redact(user.Username),
-			)
-			return []any{url.QueryEscape(strings.TrimSpace(user.Username))}
-		}
-		return []any{}
-	}
+	args, filter := criteriaFilter(ctx, criteria, user)
 
 	if user.Token == "" {
 		slog.DebugContext(ctx, "getting M2M token",
@@ -93,7 +75,7 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 		user.Token = m2mToken
 	}
 
-	endpointWithParam := fmt.Sprintf(endpoint, param(criteria)...)
+	endpointWithParam := fmt.Sprintf(endpoint, args...)
 	url := fmt.Sprintf("https://%s/api/v2/%s", u.config.Domain, endpointWithParam)
 
 	apiRequest := httpclient.NewAPIRequest(
@@ -124,39 +106,21 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 	)
 
 	for _, userResult := range users {
-		// identities.user_id:{{username}} AND identities.connection:Username-Password-Authentication
+		// identities.user_id:{{username}} AND identities.connection:Username-Password-Authentication (and other connections)
 		// It doesn't work like an AND, it works like an IN clause
 		// (check if it contains the username and the connection, but they might not be in  the same identity)
 		// So it's necessary to check if the identity is the one we are looking for
-		for _, identity := range userResult.Identities {
-			if identity.Connection == usernameFilter {
-				// if the search is by username, we need to check if the identity is the one we are looking for
-				//
-				// At this point, we know that the user is found, but the validation is to
-				// make sure the username is from the Username-Password-Authentication connection
-
-				userID, ok := identity.UserID.(string)
-				if !ok {
-					slog.DebugContext(ctx, "user found, but it's not the correct identity",
-						"filter", usernameFilter,
-						"user_id", redaction.Redact(fmt.Sprintf("%v", identity.UserID)),
-					)
-					continue
-				}
-
-				if criteria == constants.CriteriaTypeUsername && userID != user.Username {
-					slog.DebugContext(ctx, "user found, but it's not the correct identity",
-						"filter", usernameFilter,
-						"user_id", redaction.Redact(userID),
-					)
-					// if the connection is Password-Authentication and the user is not the one we are looking for,
-					// we need to return an error
-					return nil, errors.NewNotFound("user not found")
-				}
-				user.Username = userID
-				return userResult.ToUser(), nil
-			}
+		found, err := filter(ctx, &userResult, user)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to filter identity by username",
+				"error", err,
+			)
+			return nil, err
 		}
+		if found {
+			return userResult.ToUser(), nil
+		}
+
 	}
 
 	return nil, errors.NewNotFound("user not found")
@@ -341,6 +305,41 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 		"user_id", user.UserID,
 	)
 	return updatedUser, nil
+}
+
+func (u *userReaderWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+
+	resp, errStartPasswordlessFlow := StartPasswordlessFlow(ctx, u.config, alternateEmail)
+	if errStartPasswordlessFlow != nil {
+		return errStartPasswordlessFlow
+	}
+
+	slog.DebugContext(ctx, "passwordless flow started successfully",
+		"alternate_email", alternateEmail,
+		"id", resp.ID,
+		"email", resp.Email,
+		"email_verified", resp.EmailVerified,
+	)
+
+	return nil
+}
+
+func (u *userReaderWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
+
+	tokenResp, errExchangeOTPForToken := ExchangeOTPForToken(ctx, u.config, email.Email, email.OTP)
+	if errExchangeOTPForToken != nil {
+		return nil, errExchangeOTPForToken
+	}
+
+	user := &model.User{
+		Token: tokenResp.IDToken,
+	}
+
+	slog.DebugContext(ctx, "alternate email verified successfully",
+		"email", redaction.Redact(email.Email),
+	)
+
+	return user, nil
 }
 
 // NewUserReaderWriter  creates a new UserReaderWriter with the provided configuration
