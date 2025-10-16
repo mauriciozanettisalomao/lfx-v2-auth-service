@@ -66,7 +66,7 @@ func (m *messageHandlerOrchestrator) errorResponse(error string) []byte {
 }
 
 // searchByEmail normalizes the email (lowercases and trims whitespace) and returns the matching user or an error
-func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, ctriteria string, email string) (*model.User, error) {
+func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, criteria string, email string) (*model.User, error) {
 	if m.userReader == nil {
 		return nil, errs.NewUnexpected("user service unavailable")
 	}
@@ -78,14 +78,14 @@ func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, ctriteri
 	user := &model.User{
 		PrimaryEmail: email,
 	}
-	if ctriteria == constants.CriteriaTypeAlternateEmail {
+	if criteria == constants.CriteriaTypeAlternateEmail {
 		user.AlternateEmail = []model.AlternateEmail{{Email: email}}
 	}
 
 	// SearchUser is used to find “root” user emails, not linked email
 	//
 	// Finding users by alternate emails is NOT available
-	user, err := m.userReader.SearchUser(ctx, user, ctriteria)
+	user, err := m.userReader.SearchUser(ctx, user, criteria)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (m *messageHandlerOrchestrator) EmailToUsername(ctx context.Context, msg po
 
 	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
 	if email == "" {
-		return nil, errs.NewUnexpected("email is required")
+		return m.errorResponse("email is required"), nil
 	}
 
 	user, err := m.searchByEmail(ctx, constants.CriteriaTypeEmail, email)
@@ -114,7 +114,7 @@ func (m *messageHandlerOrchestrator) EmailToSub(ctx context.Context, msg port.Tr
 
 	email := strings.ToLower(strings.TrimSpace(string(msg.Data())))
 	if email == "" {
-		return nil, errs.NewUnexpected("email is required")
+		return m.errorResponse("email is required"), nil
 	}
 
 	user, err := m.searchByEmail(ctx, constants.CriteriaTypeEmail, email)
@@ -226,18 +226,24 @@ func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.Tr
 	return responseJSON, nil
 }
 
-func (m *messageHandlerOrchestrator) checkAlternateEmailExists(ctx context.Context, email string) error {
+func (m *messageHandlerOrchestrator) checkEmailExists(ctx context.Context, email string) error {
 
-	user, err := m.searchByEmail(ctx, constants.CriteriaTypeAlternateEmail, email)
-	if err != nil && !errors.As(err, &errs.NotFound{}) {
-		return err
-	}
+	for _, criteria := range []string{constants.CriteriaTypeAlternateEmail, constants.CriteriaTypeEmail} {
+		user, errSearch := m.searchByEmail(ctx, criteria, email)
+		if errSearch != nil && !errors.As(errSearch, &errs.NotFound{}) {
+			return errSearch
+		}
+		if user != nil && user.UserID != "" {
+			slog.DebugContext(ctx, "user found", "user_id", redaction.Redact(user.UserID))
 
-	if user != nil && user.UserID != "" {
-		slog.DebugContext(ctx, "user found", "user_id", redaction.Redact(user.UserID))
-		for _, alternateEmail := range user.AlternateEmail {
-			if alternateEmail.Email == email && alternateEmail.EmailVerified {
-				return errs.NewValidation("alternate email already linked")
+			if user.PrimaryEmail == email {
+				return errs.NewValidation("email already linked")
+			}
+
+			for _, alternateEmail := range user.AlternateEmail {
+				if alternateEmail.Email == email && alternateEmail.EmailVerified {
+					return errs.NewValidation("email already linked")
+				}
 			}
 		}
 	}
@@ -247,6 +253,10 @@ func (m *messageHandlerOrchestrator) checkAlternateEmailExists(ctx context.Conte
 
 // StartEmailLinking starts the email linking process
 func (m *messageHandlerOrchestrator) StartEmailLinking(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
+
+	if m.emailHandler == nil {
+		return m.errorResponse("email service unavailable"), nil
+	}
 
 	alternateEmailInput := strings.TrimSpace(string(msg.Data()))
 	if alternateEmailInput == "" {
@@ -258,7 +268,7 @@ func (m *messageHandlerOrchestrator) StartEmailLinking(ctx context.Context, msg 
 		return m.errorResponse("invalid email"), nil
 	}
 
-	err := m.checkAlternateEmailExists(ctx, alternateEmailInput)
+	err := m.checkEmailExists(ctx, alternateEmailInput)
 	if err != nil {
 		return m.errorResponse(err.Error()), nil
 	}
@@ -286,6 +296,10 @@ func (m *messageHandlerOrchestrator) StartEmailLinking(ctx context.Context, msg 
 // VerifyEmailLinking verifies the email linking
 func (m *messageHandlerOrchestrator) VerifyEmailLinking(ctx context.Context, msg port.TransportMessenger) ([]byte, error) {
 
+	if m.emailHandler == nil {
+		return m.errorResponse("email service unavailable"), nil
+	}
+
 	email := &model.Email{}
 	err := json.Unmarshal(msg.Data(), email)
 	if err != nil {
@@ -298,7 +312,7 @@ func (m *messageHandlerOrchestrator) VerifyEmailLinking(ctx context.Context, msg
 	}
 
 	//
-	errExists := m.checkAlternateEmailExists(ctx, email.Email)
+	errExists := m.checkEmailExists(ctx, email.Email)
 	if errExists != nil {
 		return m.errorResponse(errExists.Error()), nil
 	}

@@ -138,7 +138,7 @@ func (a *alternateEmailFilter) Filter(ctx context.Context, auth0User *Auth0User)
 						"identity_email", redaction.RedactEmail(identity.ProfileData.Email),
 						"identity_email_verified", identity.ProfileData.EmailVerified,
 					)
-					a.user.AlternateEmail = append(a.user.AlternateEmail, model.AlternateEmail{
+					auth0User.AlternateEmail = append(auth0User.AlternateEmail, Auth0ProfileData{
 						Email:         identity.ProfileData.Email,
 						EmailVerified: identity.ProfileData.EmailVerified,
 					})

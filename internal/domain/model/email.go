@@ -12,7 +12,7 @@ type Email struct {
 	EmailVerified bool   `json:"email_verified"`
 }
 
-// IsValidEmailRFC checks if the email is valid according to RFC 5322
+// IsValidEmail checks if the email is valid according to RFC 5322
 func (e *Email) IsValidEmail() bool {
 	if e.Email == "" {
 		return false

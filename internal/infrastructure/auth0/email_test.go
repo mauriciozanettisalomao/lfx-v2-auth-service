@@ -43,7 +43,6 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 		mockSetup   func() *mockPasswordlessFlow
 		wantErr     bool
 		errContains string
-		validate    func(t *testing.T, response *PasswordlessStartResponse)
 	}{
 		{
 			name:  "successfully starts passwordless flow",
@@ -65,12 +64,6 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			validate: func(t *testing.T, response *PasswordlessStartResponse) {
-				assert.NotNil(t, response)
-				assert.Equal(t, "test-id-123", response.ID)
-				assert.Equal(t, "test@example.com", response.Email)
-				assert.True(t, response.EmailVerified)
-			},
 		},
 		{
 			name:  "starts flow with unverified email",
@@ -87,12 +80,6 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			validate: func(t *testing.T, response *PasswordlessStartResponse) {
-				assert.NotNil(t, response)
-				assert.Equal(t, "test-id-456", response.ID)
-				assert.Equal(t, "unverified@example.com", response.Email)
-				assert.False(t, response.EmailVerified)
-			},
 		},
 		{
 			name:  "returns error when SendEmail fails",
@@ -123,10 +110,6 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			validate: func(t *testing.T, response *PasswordlessStartResponse) {
-				assert.NotNil(t, response)
-				assert.Equal(t, "test+tag@example.com", response.Email)
-			},
 		},
 		{
 			name:  "handles empty response fields",
@@ -143,11 +126,6 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			validate: func(t *testing.T, response *PasswordlessStartResponse) {
-				assert.NotNil(t, response)
-				assert.Empty(t, response.ID)
-				assert.Empty(t, response.Email)
-			},
 		},
 	}
 
@@ -158,19 +136,15 @@ func TestEmailLinkingFlow_StartPasswordlessFlow(t *testing.T) {
 				flow: mockFlow,
 			}
 
-			response, err := emailFlow.StartPasswordlessFlow(ctx, tt.email)
+			err := emailFlow.StartPasswordlessFlow(ctx, tt.email)
 
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
 				}
-				assert.Nil(t, response)
 			} else {
 				require.NoError(t, err)
-				if tt.validate != nil {
-					tt.validate(t, response)
-				}
 			}
 		})
 	}
@@ -460,10 +434,8 @@ func TestEmailLinkingFlow_Integration(t *testing.T) {
 		emailFlow := &EmailLinkingFlow{flow: mockFlow}
 
 		// Step 1: Start passwordless flow
-		startResponse, err := emailFlow.StartPasswordlessFlow(ctx, email)
+		err := emailFlow.StartPasswordlessFlow(ctx, email)
 		require.NoError(t, err)
-		assert.Equal(t, "integration-id", startResponse.ID)
-		assert.Equal(t, email, startResponse.Email)
 
 		// Step 2: Exchange OTP for token
 		tokenResponse, err := emailFlow.ExchangeOTPForToken(ctx, email, otp)
@@ -480,7 +452,7 @@ func TestEmailLinkingFlow_Integration(t *testing.T) {
 		}
 
 		emailFlow := &EmailLinkingFlow{flow: mockFlow}
-		_, err := emailFlow.StartPasswordlessFlow(ctx, "test@example.com")
+		err := emailFlow.StartPasswordlessFlow(ctx, "test@example.com")
 		require.Error(t, err)
 	})
 

@@ -642,7 +642,7 @@ func Test_alternateEmailFilter_Filter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Store original length for verification
-			originalLen := len(tt.user.AlternateEmail)
+			originalLen := len(tt.auth0User.AlternateEmail)
 
 			filter := &alternateEmailFilter{user: tt.user}
 			match, err := filter.Filter(ctx, tt.auth0User)
@@ -655,9 +655,9 @@ func Test_alternateEmailFilter_Filter(t *testing.T) {
 
 			assert.Equal(t, tt.wantMatch, match)
 
-			// Verify that alternate email was appended when match is found
-			if tt.wantMatch && !tt.wantErr && originalLen > 0 {
-				assert.Greater(t, len(tt.user.AlternateEmail), originalLen)
+			// Verify that alternate email was appended to auth0User when match is found
+			if tt.wantMatch && !tt.wantErr {
+				assert.Greater(t, len(tt.auth0User.AlternateEmail), originalLen)
 			}
 		})
 	}

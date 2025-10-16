@@ -11,6 +11,7 @@ import (
 	"github.com/auth0/go-auth0/authentication/oauth"
 	"github.com/auth0/go-auth0/authentication/passwordless"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 )
 
 // EmailLinkingFlow is the flow for email linking
@@ -28,16 +29,22 @@ type auth0PasswordlessFlow struct {
 }
 
 func (a *auth0PasswordlessFlow) SendEmail(ctx context.Context, request passwordless.SendEmailRequest) (*passwordless.SendEmailResponse, error) {
+	if a.authConfig == nil {
+		return nil, errors.NewUnexpected("auth0 authentication client not configured")
+	}
 	return a.authConfig.Passwordless.SendEmail(ctx, request)
 }
 
 func (a *auth0PasswordlessFlow) LoginWithEmail(ctx context.Context, request passwordless.LoginWithEmailRequest, options oauth.IDTokenValidationOptions) (*oauth.TokenSet, error) {
+	if a.authConfig == nil {
+		return nil, errors.NewUnexpected("auth0 authentication client not configured")
+	}
 	return a.authConfig.Passwordless.LoginWithEmail(ctx, request, options)
 }
 
 // StartPasswordlessFlow initiates a passwordless authentication flow by sending an OTP to the user's email
 // This is used in the alternate email linking flow to send a verification code to the alternate email address.
-func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email string) (*PasswordlessStartResponse, error) {
+func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email string) error {
 
 	// Use SDK's passwordless SendEmail method
 	request := passwordless.SendEmailRequest{
@@ -51,19 +58,15 @@ func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email stri
 		slog.ErrorContext(ctx, "failed to send passwordless email",
 			"error", err,
 			"email", email)
-		return nil, errors.NewUnexpected("failed to start passwordless flow", err)
+		return errors.NewUnexpected("failed to start passwordless flow", err)
 	}
 
 	slog.DebugContext(ctx, "passwordless flow started successfully",
-		"email", response.Email,
-		"id", response.ID,
+		"email", redaction.Redact(response.Email),
+		"passwordless_flow_id", response.ID,
 		"email_verified", response.EmailVerified)
 
-	return &PasswordlessStartResponse{
-		ID:            response.ID,
-		Email:         response.Email,
-		EmailVerified: response.EmailVerified,
-	}, nil
+	return nil
 }
 
 // ExchangeOTPForToken exchanges a passwordless OTP for tokens using private key JWT authentication

@@ -265,12 +265,12 @@ func (a *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 
 func (a *userReaderWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
 	slog.DebugContext(ctx, "sending alternate email verification", "alternate_email", alternateEmail)
-	return nil
+	return errors.NewValidation("send verification alternate email is not supported for Authelia yet")
 }
 
 func (a *userReaderWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
 	slog.DebugContext(ctx, "verifying alternate email", "email", email.Email, "otp", email.OTP)
-	return nil, nil
+	return nil, errors.NewValidation("alternate email verification is not supported for Authelia yet")
 }
 
 // NewUserReaderWriter creates a new Authelia User repository

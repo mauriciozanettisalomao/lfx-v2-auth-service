@@ -296,17 +296,12 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 
 func (u *userReaderWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
 
-	resp, errStartPasswordlessFlow := u.emailLinkingFlow.StartPasswordlessFlow(ctx, alternateEmail)
+	errStartPasswordlessFlow := u.emailLinkingFlow.StartPasswordlessFlow(ctx, alternateEmail)
 	if errStartPasswordlessFlow != nil {
 		return errStartPasswordlessFlow
 	}
 
-	slog.DebugContext(ctx, "passwordless flow started successfully",
-		"alternate_email", alternateEmail,
-		"id", resp.ID,
-		"email", resp.Email,
-		"email_verified", resp.EmailVerified,
-	)
+	slog.DebugContext(ctx, "send verification alternate email successfully")
 
 	return nil
 }
