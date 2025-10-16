@@ -55,326 +55,68 @@ For detailed information about the Authelia integration architecture and sync me
 
 The LFX v2 Auth Service operates as a NATS-based microservice that responds to request/reply patterns on specific subjects. The service provides user management capabilities through NATS messaging.
 
----
+### Available Operations
 
-### Email to Username Lookup
+The service provides the following groups of operations:
 
-To look up a username by email address, send a NATS request to the following subject:
+#### Email Lookup Operations
+Look up users by their email addresses to retrieve usernames or subject identifiers.
 
-**Subject:** `lfx.auth-service.email_to_username`  
-**Pattern:** Request/Reply
+**Subjects:**
+- `lfx.auth-service.email_to_username` - Look up username by email
+- `lfx.auth-service.email_to_sub` - Look up subject identifier by email
 
-##### Request Payload
-
-The request payload should be a plain text email address (no JSON wrapping required):
-
-```
-user@example.com
-```
-
-##### Reply
-
-The service returns the username as plain text if the email is found:
-
-**Success Reply:**
-```
-john.doe
-```
-
-**Error Reply:**
-```json
-{
-  "success": false,
-  "error": "user not found"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Look up username by email
-nats request lfx.auth-service.email_to_username zephyr.stormwind@mythicaltech.io
-
-# Expected response: zephyr.stormwind
-```
-
-**Important Notes:**
-- This service searches for users by their **primary email** only
-- Linked/alternate email addresses are **not** supported for lookup
-- The service works with Auth0, Authelia, and mock repositories based on configuration
+**[View Email Lookup Documentation](docs/email_lookups.md)**
 
 ---
 
-### Email to Subject Identifier Lookup
+#### User Metadata Operations
+Retrieve and update user profile metadata using various input types (JWT tokens, subject identifiers, or usernames).
 
-To look up a subject identifier by email address, send a NATS request to the following subject:
+**Subjects:**
+- `lfx.auth-service.user_metadata.read` - Retrieve user metadata
+- `lfx.auth-service.user_metadata.update` - Update user profile
 
-**Subject:** `lfx.auth-service.email_to_sub`  
-**Pattern:** Request/Reply
-
-##### Request Payload
-
-The request payload should be a plain text email address (no JSON wrapping required):
-
-```
-user@example.com
-```
-
-##### Reply
-
-The service returns the subject identifier as plain text if the email is found:
-
-**Success Reply:**
-```
-auth0|123456789
-```
-
-**Error Reply:**
-```json
-{
-  "success": false,
-  "error": "user not found"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Look up subject identifier by email
-nats request lfx.auth-service.email_to_sub zephyr.stormwind@mythicaltech.io
-
-# Expected response: auth0|zephyr001
-```
-
-**Important Notes:**
-- This service searches for users by their **primary email** only
-- Linked/alternate email addresses are **not** supported for lookup
-- The service works with Auth0, Authelia, and mock repositories based on configuration
-- The returned subject identifier is the canonical user identifier used throughout the system
-- For Authelia-specific SUB identifier details and how they are populated, see: [`internal/infrastructure/authelia/README.md`](internal/infrastructure/authelia/README.md)
+**[View User Metadata Documentation](docs/user_metadata.md)**
 
 ---
 
-### User Metadata Retrieval
+#### Email Verification Flow
+Two-step verification flow for verifying ownership of alternate email addresses.
 
-To retrieve user metadata, send a NATS request to the following subject:
+**Subjects:**
+- `lfx.auth-service.email_linking.send_verification` - Send OTP to email
+- `lfx.auth-service.email_linking.verify` - Verify email with OTP
 
-**Subject:** `lfx.auth-service.user_metadata.read`  
-**Pattern:** Request/Reply
-
-The service supports a **hybrid approach** for user metadata retrieval, accepting multiple input types and automatically determining the appropriate lookup strategy based on the input format.
-
-#### Hybrid Input Support
-
-The service intelligently handles different input types:
-
-1. **JWT Tokens** (Auth0) or **Authelia Tokens** (Authelia)
-2. **Subject Identifiers** (canonical user IDs)
-3. **Usernames**
-
-##### Request Payload
-
-The request payload can be any of the following formats (no JSON wrapping required):
-
-**JWT Token (Auth0):**
-```
-eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-**Subject Identifier:**
-```
-auth0|123456789
-```
-
-**Username:**
-```
-john.doe
-```
-
-##### Lookup Strategy
-
-The service automatically determines the lookup strategy based on input format:
-
-- **Token Strategy**: If input is a JWT/Authelia token, validates the token and extracts the subject identifier
-- **Canonical Lookup**: If input contains `|` (pipe character) or is a UUID, treats as subject identifier for direct lookup
-- **Username Search**: If input doesn't match above patterns, treats as username for search lookup
-
-##### Reply
-
-The service returns a structured reply with user metadata:
-
-**Success Reply:**
-```json
-{
-  "success": true,
-  "data": {
-    "name": "John Doe",
-    "given_name": "John",
-    "family_name": "Doe",
-    "job_title": "Software Engineer",
-    "organization": "Example Corp",
-    "country": "United States",
-    "state_province": "California",
-    "city": "San Francisco",
-    "address": "123 Main Street",
-    "postal_code": "94102",
-    "phone_number": "+1-555-0123",
-    "t_shirt_size": "L",
-    "picture": "https://example.com/avatar.jpg",
-    "zoneinfo": "America/Los_Angeles"
-  }
-}
-```
-
-**Error Reply (User Not Found):**
-```json
-{
-  "success": false,
-  "error": "user not found"
-}
-```
-
-**Error Reply (Invalid Token):**
-```json
-{
-  "success": false,
-  "error": "invalid token"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Retrieve user metadata using JWT token
-nats request lfx.auth-service.user_metadata.read "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-
-# Retrieve user metadata using subject identifier
-nats request lfx.auth-service.user_metadata.read "auth0|123456789"
-
-# Retrieve user metadata using username
-nats request lfx.auth-service.user_metadata.read "john.doe"
-```
-
-**Important Notes:**
-- The service automatically detects input type and applies the appropriate lookup strategy
-- JWT tokens are validated for signature and expiration before extracting subject information
-- The target identity provider is determined by the `USER_REPOSITORY_TYPE` environment variable
-- For detailed Auth0-specific behavior and limitations, see: [`internal/infrastructure/auth0/README.md`](internal/infrastructure/auth0/README.md)
-- For detailed Authelia-specific behavior and SUB management, see: [`internal/infrastructure/authelia/README.md`](internal/infrastructure/authelia/README.md)
+📖 **[View Email Verification Documentation](docs/email_verification.md)**
 
 ---
 
-### User Update Operation
+#### Identity Linking
+Link verified identities (such as verified email addresses) to user accounts.
 
-To update a user profile, send a NATS request to the following subject:
+**Subjects:**
+- `lfx.auth-service.user_identity.link` - Link verified identity to user
 
-**Subject:** `lfx.auth-service.user_metadata.update`  
-**Pattern:** Request/Reply
-
-##### Request Payload
-
-The request payload must be a JSON object containing the user data to update. The `token` field is **required** for authentication and authorization.
-
-```json
-{
-  "token": "eyJhbG...",
-  "user_id": "auth0|zephyr001",
-  "username": "zephyr.stormwind",
-  "primary_email": "zephyr.stormwind@mythicaltech.io",
-  "user_metadata": {
-    "name": "Zephyr Stormwind",
-    "given_name": "Zephyr",
-    "family_name": "Stormwind",
-    "job_title": "Cloud Architect",
-    "organization": "Mythical Tech Solutions",
-    "country": "Aetheria",
-    "state_province": "Skylands",
-    "city": "Nimbus City",
-    "address": "42 Celestial Tower, Cloud District",
-    "postal_code": "90210",
-    "phone_number": "+1-555-STORM-01",
-    "t_shirt_size": "M",
-    "picture": "https://avatars.mythicaltech.io/zephyr.jpg",
-    "zoneinfo": "Aetheria/Skylands"
-  }
-}
-```
-
-##### Required Fields
-
-- `token`: JWT authentication token (required for all requests)
-- `user_metadata`: Object containing additional user profile information
-
-##### Reply
-
-The service returns a structured reply indicating success or failure:
-
-**Success Reply:**
-```json
-{
-  "success": true,
-  "data": {
-    "name": "Zephyr Stormwind",
-    "given_name": "Zephyr",
-    "family_name": "Stormwind",
-    "job_title": "Cloud Architect",
-    "organization": "Mythical Tech Solutions",
-    "country": "Aetheria",
-    "state_province": "Skylands",
-    "city": "Nimbus City",
-    "address": "42 Celestial Tower, Cloud District",
-    "postal_code": "90210",
-    "phone_number": "+1-555-STORM-01",
-    "t_shirt_size": "M",
-    "picture": "https://avatars.mythicaltech.io/zephyr.jpg",
-    "zoneinfo": "Aetheria/Skylands"
-  }
-}
-```
-
-**Error Reply:**
-```json
-{
-  "success": false,
-  "error": "username is required"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Update user profile
-nats request lfx.auth-service.user_metadata.update '{
-  "token": "eyJhbG...",
-  "user_metadata": {
-    "name": "Aurora Moonbeam",
-    "job_title": "Senior DevOps Enchanter"
-  }
-}'
-```
-
-**Important Notes:**
-- The service works with Auth0, Authelia, and mock repositories based on configuration
+**[View Identity Linking Documentation](docs/identity_linking.md)**
 
 ---
 
-### Email Verification Flow for Alternate Email Linking
+### Email Verification and Linking Flow
 
-The auth service provides a two-step verification flow for linking alternate email addresses to user accounts. This flow verifies ownership of the email address before linking it to the user's profile.
-
-#### Flow Diagram
+The following diagram shows the complete three-step flow for verifying an alternate email address and linking it to a user account:
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Client
+    participant SSRApp
     participant AuthService
     participant Auth0
 
-    Note over User,Auth0: Start Email Linking Flow
+    Note over User,Auth0: Step 1: Start Email Verification Flow
     
-    User->>Client: Request to link alternate email
-    Client->>AuthService: NATS: email_linking.send_verification<br/>(alternate email)
+    User->>SSRApp: Request to link alternate email
+    SSRApp->>AuthService: NATS: email_linking.send_verification<br/>(alternate email)
     
     AuthService->>AuthService: Validate email format
     AuthService->>AuthService: Check email doesn't exist<br/>(primary or alternate)
@@ -382,169 +124,38 @@ sequenceDiagram
     AuthService->>Auth0: Start Passwordless Flow<br/>(send OTP to email)
     Auth0-->>User: Email with OTP code
     Auth0-->>AuthService: Success
-    AuthService-->>Client: {"success": true,<br/>"message": "verification sent"}
-    Client-->>User: Show OTP input form
+    AuthService-->>SSRApp: {"success": true,<br/>"message": "verification sent"}
+    SSRApp-->>User: Show OTP input modal
 
-    Note over User,Auth0: Verify Email Linking Flow
+    Note over User,Auth0: Step 2: Verify Email with OTP
     
-    User->>Client: Submit OTP code
-    Client->>AuthService: NATS: email_linking.verify<br/>(email + OTP)
+    User->>SSRApp: Submit OTP code
+    SSRApp->>AuthService: NATS: email_linking.verify<br/>(email + OTP)
     
     AuthService->>AuthService: Validate email format
     AuthService->>AuthService: Check email still doesn't exist<br/>(prevent race condition)
     
-    AuthService->>Auth0: Exchange OTP for token
-    Auth0-->>AuthService: Access token
-    AuthService-->>Client: {"success": true,<br/>"data": {"token": "..."}}
-    Client-->>User: Email verified successfully
+    AuthService->>Auth0: Exchange OTP for ID token<br/>(using service credentials)
+    Auth0-->>AuthService: ID token
+    AuthService-->>SSRApp: {"success": true,<br/>"data": {"token": "..."}}
     
-    Note over Client,Auth0: PENDING IMPLEMENTATION<br/>Client must use returned token to<br/>link verified email to user identity<br/>
+    Note over User,Auth0: Step 3: Link Identity to User
+    
+    SSRApp->>AuthService: NATS: user_identity.link<br/>(user_token, link_with)
+    AuthService->>AuthService: Parse JWT token<br/>(extract user_id from 'sub')
+    AuthService->>Auth0: POST /users/{id}/identities<br/>(using user's token)
+    Auth0-->>AuthService: Linked identities
+    AuthService-->>SSRApp: {"success": true,<br/>"message": "identity linked"}
+    SSRApp-->>User: Email linked successfully
 ```
 
-#### Step 1: Send Verification Code
-
-To initiate the email verification process, send a NATS request to start the passwordless flow:
-
-**Subject:** `lfx.auth-service.email_linking.send_verification`  
-**Pattern:** Request/Reply
-
-##### Request Payload
-
-The request payload should be a plain text email address (no JSON wrapping required):
-
-```
-alternate-email@example.com
-```
-
-##### Reply
-
-The service sends a one-time password (OTP) to the provided email address and returns a success confirmation:
-
-**Success Reply:**
-```json
-{
-  "success": true,
-  "message": "alternate email verification sent"
-}
-```
-
-**Error Reply (Email Already Linked):**
-```json
-{
-  "success": false,
-  "error": "alternate email already linked"
-}
-```
-
-**Error Reply (Invalid Email):**
-```json
-{
-  "success": false,
-  "error": "alternate email is required"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Send verification code to alternate email
-nats request lfx.auth-service.email_linking.send_verification "john.personal@gmail.com"
-
-# Expected response: {"success":true,"message":"alternate email verification sent"}
-```
-
-**Important Notes:**
-- The service checks if the email is already linked to any user account before sending the verification code
-- An OTP code is available to be used for a valid time period
+**Flow Steps:**
+- **Step 1-2:** Email verification process - see [Email Verification Documentation](docs/email_verification.md)
+- **Step 3:** Identity linking - see [Identity Linking Documentation](docs/identity_linking.md)
 
 ---
 
-#### Step 2: Verify Email with OTP
-
-After receiving the OTP code via email, verify the email address by exchanging the OTP for authentication tokens:
-
-**Subject:** `lfx.auth-service.email_linking.verify`  
-**Pattern:** Request/Reply
-
-##### Request Payload
-
-The request payload must be a JSON object containing the email address and the OTP code:
-
-```json
-{
-  "email": "john.personal@gmail.com",
-  "otp": "123456"
-}
-```
-
-##### Required Fields
-
-- `email`: The email address that received the verification code
-- `otp`: The one-time password code sent to the email
-
-##### Reply
-
-The service validates the OTP and returns authentication tokens if successful:
-
-**Success Reply:**
-```json
-{
-  "success": true,
-  "data": {
-    "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-}
-```
-
-The returned token is an authentication token that can be used to link the verified email to the user's account.
-
-**Error Reply (Invalid OTP):**
-```json
-{
-  "success": false,
-  "error": "failed to exchange OTP for token"
-}
-```
-
-**Error Reply (Email Already Linked):**
-```json
-{
-  "success": false,
-  "error": "alternate email already linked"
-}
-```
-
-**Error Reply (Invalid Request):**
-```json
-{
-  "success": false,
-  "error": "failed to unmarshal email data"
-}
-```
-
-##### Example using NATS CLI
-
-```bash
-# Verify the alternate email with OTP code
-nats request lfx.auth-service.email_linking.verify '{
-  "email": "john.personal@gmail.com",
-  "otp": "123456"
-}'
-
-# Expected response: {"success":true,"data":{"token":"eyJhbG..."}}
-```
-
-**Important Notes:**
-- This feature is **only supported for Auth0**. Authelia and mock implementations do not support this functionality yet.
-- OTP codes are time-sensitive and available for a valid time period
-- The service prevents linking an email that is already verified and linked to another user
-- The returned token contains user identity information from the verified email
-- **Note:** The actual linking of the alternate email to the user identity will be available in an upcoming implementation
-- For detailed Auth0-specific implementation details and technical information about the passwordless flow, see: [`internal/infrastructure/auth0/README.md`](internal/infrastructure/auth0/README.md)
-
----
-
-#### Configuration
+### Configuration
 
 ##### NATS Configuration
 

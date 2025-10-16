@@ -59,7 +59,7 @@ The Auth0 integration uses Auth0's Passwordless Authentication API to verify own
 
 ### Auth0 Passwordless Authentication Flow
 
-The verification process consists of two Auth0 API calls:
+The verification and linking process consists of three Auth0 API calls:
 
 #### 1. Send Verification Code
 
@@ -123,12 +123,65 @@ The verification process consists of two Auth0 API calls:
 - ID token contains claims about the verified email address
 - OTP is single-use and expires after the time limit
 
+#### 3. Link Identity to User Account
+
+**Auth0 API Endpoint:** `POST https://{auth0-domain}/api/v2/users/{user_id}/identities`
+
+**Request Headers:**
+```
+Authorization: Bearer {user_management_api_token}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "link_with": "eyJhbGciOiJSUzI1NiIs..."
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "connection": "email",
+    "user_id": "alternate-email@example.com",
+    "provider": "email",
+    "isSocial": false,
+    "profileData": {
+      "email": "alternate-email@example.com",
+      "email_verified": true
+    }
+  }
+]
+```
+
+**Auth0 Behavior:**
+- Links the verified email identity to the existing user account
+- Uses the ID token from step 2 to identify the verified email
+- Requires user's JWT token with `update:current_user_identities` scope
+- Does NOT change the user's current global session
+- Returns array of all linked identities for the user
+
+**Important Notes:**
+- The Auth Service uses the **user's JWT token** (not the service's M2M credentials) to authenticate the API call
+- This ensures the operation is performed with user-level permissions
+- The `link_with` field contains the ID token from the passwordless verification flow
+- This approach prevents session hijacking by maintaining the user's current authentication state
+
 ### NATS Integration
 
-The email verification functionality is exposed via two NATS subjects:
+The email verification and linking functionality is exposed via three NATS subjects:
 
 - **`lfx.auth-service.email_linking.send_verification`**: Initiates the passwordless flow
-- **`lfx.auth-service.email_linking.verify`**: Validates OTP and returns authentication token
+- **`lfx.auth-service.email_linking.verify`**: Validates OTP and returns ID token
+- **`lfx.auth-service.user_identity.link`**: Links the verified email identity to the user account
+
+**Token Processing for Identity Linking:**
+- The Auth Service parses the user's JWT token (`user_token`) to extract the `user_id` from the `sub` claim
+- Validates the JWT signature using Auth0's public keys
+- Verifies the token has the required `update:current_user_identities` scope
+- Uses the extracted `user_id` to make the identity linking API call with the `link_with` ID token
 
 ### Auth0 Configuration Requirements
 
