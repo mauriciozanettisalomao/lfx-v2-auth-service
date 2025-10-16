@@ -88,7 +88,7 @@ Two-step verification flow for verifying ownership of alternate email addresses.
 - `lfx.auth-service.email_linking.send_verification` - Send OTP to email
 - `lfx.auth-service.email_linking.verify` - Verify email with OTP
 
-📖 **[View Email Verification Documentation](docs/email_verification.md)**
+**[View Email Verification Documentation](docs/email_verification.md)** - Includes complete flow diagram
 
 ---
 
@@ -99,59 +99,6 @@ Link verified identities (such as verified email addresses) to user accounts.
 - `lfx.auth-service.user_identity.link` - Link verified identity to user
 
 **[View Identity Linking Documentation](docs/identity_linking.md)**
-
----
-
-### Email Verification and Linking Flow
-
-The following diagram shows the complete three-step flow for verifying an alternate email address and linking it to a user account:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant SSRApp
-    participant AuthService
-    participant Auth0
-
-    Note over User,Auth0: Step 1: Start Email Verification Flow
-    
-    User->>SSRApp: Request to link alternate email
-    SSRApp->>AuthService: NATS: email_linking.send_verification<br/>(alternate email)
-    
-    AuthService->>AuthService: Validate email format
-    AuthService->>AuthService: Check email doesn't exist<br/>(primary or alternate)
-    
-    AuthService->>Auth0: Start Passwordless Flow<br/>(send OTP to email)
-    Auth0-->>User: Email with OTP code
-    Auth0-->>AuthService: Success
-    AuthService-->>SSRApp: {"success": true,<br/>"message": "verification sent"}
-    SSRApp-->>User: Show OTP input modal
-
-    Note over User,Auth0: Step 2: Verify Email with OTP
-    
-    User->>SSRApp: Submit OTP code
-    SSRApp->>AuthService: NATS: email_linking.verify<br/>(email + OTP)
-    
-    AuthService->>AuthService: Validate email format
-    AuthService->>AuthService: Check email still doesn't exist<br/>(prevent race condition)
-    
-    AuthService->>Auth0: Exchange OTP for ID token<br/>(using service credentials)
-    Auth0-->>AuthService: ID token
-    AuthService-->>SSRApp: {"success": true,<br/>"data": {"token": "..."}}
-    
-    Note over User,Auth0: Step 3: Link Identity to User
-    
-    SSRApp->>AuthService: NATS: user_identity.link<br/>(user_token, link_with)
-    AuthService->>AuthService: Parse JWT token<br/>(extract user_id from 'sub')
-    AuthService->>Auth0: POST /users/{id}/identities<br/>(using user's token)
-    Auth0-->>AuthService: Linked identities
-    AuthService-->>SSRApp: {"success": true,<br/>"message": "identity linked"}
-    SSRApp-->>User: Email linked successfully
-```
-
-**Flow Steps:**
-- **Step 1-2:** Email verification process - see [Email Verification Documentation](docs/email_verification.md)
-- **Step 3:** Identity linking - see [Identity Linking Documentation](docs/identity_linking.md)
 
 ---
 

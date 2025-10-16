@@ -79,7 +79,5 @@ nats request lfx.auth-service.user_identity.link '{
 
 ### Complete Flow
 
-For a complete understanding of how this operation fits into the email verification and linking flow, see:
-- [Main README - Complete Flow Diagram](../README.md#email-verification-and-linking-flow)
-- [Email Verification Documentation](email_verification.md) (Steps 1-2)
+For a complete understanding of how this operation fits into the email verification and linking flow, see the [Email Verification Documentation](email_verification.md#complete-email-verification-and-linking-flow) which includes a comprehensive flow diagram showing all three steps (Steps 1-2: Email Verification, Step 3: Identity Linking).
 
