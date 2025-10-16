@@ -211,7 +211,7 @@ func (u *userWriter) SendVerificationAlternateEmail(ctx context.Context, alterna
 }
 
 func (u *userWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
-	slog.DebugContext(ctx, "mock: verifying alternate email", "email", email.Email, "otp", email.OTP)
+	slog.DebugContext(ctx, "mock: verifying alternate email", "email", redaction.Redact(email.Email))
 	// For mock implementation, return a basic user object
 	return &model.User{
 		PrimaryEmail: email.Email,
