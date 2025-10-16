@@ -12,7 +12,6 @@ import (
 
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/model"
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
-	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/constants"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/httpclient"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
@@ -22,15 +21,6 @@ import (
 const (
 	userUpdateRequiredScope = "update:current_user_metadata"
 	userReadRequiredScope   = "read:current_user"
-)
-
-var (
-	// criteriaEndpointMapping is a map of criteria types and their corresponding API endpoints
-	criteriaEndpointMapping = map[string]string{
-		constants.CriteriaTypeEmail:          "users-by-email?email=%s",
-		constants.CriteriaTypeUsername:       `users?q=identities.user_id:%s&search_engine=v3`,
-		constants.CriteriaTypeAlternateEmail: `users?q=identities.profileData.email:%s&search_engine=v3`,
-	}
 )
 
 // Config holds the configuration for Auth0 Management API
@@ -49,19 +39,21 @@ type userUpdateRequest struct {
 }
 
 type userReaderWriter struct {
-	config        Config
-	httpClient    *httpclient.Client
-	errorResponse *ErrorResponse
+	config           Config
+	emailLinkingFlow *EmailLinkingFlow
+	httpClient       *httpclient.Client
+	errorResponse    *ErrorResponse
 }
 
 func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, criteria string) (*model.User, error) {
 
-	endpoint, ok := criteriaEndpointMapping[criteria]
-	if !ok {
+	filterer := newUserFilterer(criteria, user)
+	if filterer == nil {
 		return nil, errors.NewValidation(fmt.Sprintf("invalid criteria type: %s", criteria))
 	}
 
-	args, filter := criteriaFilter(ctx, criteria, user)
+	endpoint := filterer.Endpoint(ctx)
+	args := filterer.Args(ctx)
 
 	if user.Token == "" {
 		slog.DebugContext(ctx, "getting M2M token",
@@ -110,21 +102,16 @@ func (u *userReaderWriter) SearchUser(ctx context.Context, user *model.User, cri
 		// It doesn't work like an AND, it works like an IN clause
 		// (check if it contains the username and the connection, but they might not be in  the same identity)
 		// So it's necessary to check if the identity is the one we are looking for
-		found, err := filter(ctx, &userResult, user)
+		found, err := filterer.Filter(ctx, &userResult)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to filter identity by username",
-				"error", err,
-			)
 			return nil, err
 		}
-		if found {
-			return userResult.ToUser(), nil
+		if !found {
+			continue
 		}
-
+		return userResult.ToUser(), nil
 	}
-
 	return nil, errors.NewNotFound("user not found")
-
 }
 
 func (u *userReaderWriter) GetUser(ctx context.Context, user *model.User) (*model.User, error) {
@@ -307,9 +294,9 @@ func (u *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 	return updatedUser, nil
 }
 
-func (u *userReaderWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+func (u *userReaderWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
 
-	resp, errStartPasswordlessFlow := StartPasswordlessFlow(ctx, u.config, alternateEmail)
+	resp, errStartPasswordlessFlow := u.emailLinkingFlow.StartPasswordlessFlow(ctx, alternateEmail)
 	if errStartPasswordlessFlow != nil {
 		return errStartPasswordlessFlow
 	}
@@ -326,7 +313,7 @@ func (u *userReaderWriter) SendAlternateEmailVerification(ctx context.Context, a
 
 func (u *userReaderWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
 
-	tokenResp, errExchangeOTPForToken := ExchangeOTPForToken(ctx, u.config, email.Email, email.OTP)
+	tokenResp, errExchangeOTPForToken := u.emailLinkingFlow.ExchangeOTPForToken(ctx, email.Email, email.OTP)
 	if errExchangeOTPForToken != nil {
 		return nil, errExchangeOTPForToken
 	}
@@ -368,9 +355,12 @@ func NewUserReaderWriter(ctx context.Context, httpConfig httpclient.Config, auth
 		auth0Config.JWTVerificationConfig = jwtConfig
 	}
 
+	emailLinkingFlow := NewEmailLinkingFlow(auth0Config.M2MTokenManager.authConfig)
+
 	return &userReaderWriter{
-		config:        auth0Config,
-		httpClient:    httpClient,
-		errorResponse: NewErrorResponse(),
+		config:           auth0Config,
+		emailLinkingFlow: emailLinkingFlow,
+		httpClient:       httpClient,
+		errorResponse:    NewErrorResponse(),
 	}, nil
 }

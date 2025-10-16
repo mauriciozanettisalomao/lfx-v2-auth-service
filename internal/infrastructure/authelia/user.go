@@ -263,7 +263,7 @@ func (a *userReaderWriter) UpdateUser(ctx context.Context, user *model.User) (*m
 	return existingUser.User, nil
 }
 
-func (a *userReaderWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+func (a *userReaderWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
 	slog.DebugContext(ctx, "sending alternate email verification", "alternate_email", alternateEmail)
 	return nil
 }

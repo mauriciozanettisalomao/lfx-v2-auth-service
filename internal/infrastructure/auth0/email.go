@@ -7,31 +7,37 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/auth0/go-auth0/authentication"
 	"github.com/auth0/go-auth0/authentication/oauth"
 	"github.com/auth0/go-auth0/authentication/passwordless"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 )
 
-// PasswordlessStartResponse represents the response from Auth0 passwordless start endpoint
-type PasswordlessStartResponse struct {
-	ID            string `json:"_id"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
+// EmailLinkingFlow is the flow for email linking
+type EmailLinkingFlow struct {
+	flow passwordlessFlow
 }
 
-// TokenResponse represents the response from Auth0 token endpoint
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	IDToken      string `json:"id_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	Scope        string `json:"scope"`
+type passwordlessFlow interface {
+	SendEmail(ctx context.Context, request passwordless.SendEmailRequest) (*passwordless.SendEmailResponse, error)
+	LoginWithEmail(ctx context.Context, request passwordless.LoginWithEmailRequest, options oauth.IDTokenValidationOptions) (*oauth.TokenSet, error)
+}
+
+type auth0PasswordlessFlow struct {
+	authConfig *authentication.Authentication
+}
+
+func (a *auth0PasswordlessFlow) SendEmail(ctx context.Context, request passwordless.SendEmailRequest) (*passwordless.SendEmailResponse, error) {
+	return a.authConfig.Passwordless.SendEmail(ctx, request)
+}
+
+func (a *auth0PasswordlessFlow) LoginWithEmail(ctx context.Context, request passwordless.LoginWithEmailRequest, options oauth.IDTokenValidationOptions) (*oauth.TokenSet, error) {
+	return a.authConfig.Passwordless.LoginWithEmail(ctx, request, options)
 }
 
 // StartPasswordlessFlow initiates a passwordless authentication flow by sending an OTP to the user's email
 // This is used in the alternate email linking flow to send a verification code to the alternate email address.
-func StartPasswordlessFlow(ctx context.Context, config Config, email string) (*PasswordlessStartResponse, error) {
+func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email string) (*PasswordlessStartResponse, error) {
 
 	// Use SDK's passwordless SendEmail method
 	request := passwordless.SendEmailRequest{
@@ -40,7 +46,7 @@ func StartPasswordlessFlow(ctx context.Context, config Config, email string) (*P
 		Send:       "code",
 	}
 
-	response, err := config.M2MTokenManager.authConfig.Passwordless.SendEmail(ctx, request)
+	response, err := e.flow.SendEmail(ctx, request)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to send passwordless email",
 			"error", err,
@@ -63,7 +69,7 @@ func StartPasswordlessFlow(ctx context.Context, config Config, email string) (*P
 // ExchangeOTPForToken exchanges a passwordless OTP for tokens using private key JWT authentication
 // This is used for the alternate email linking flow where a user verifies their
 // alternate email address by entering a one-time password (OTP) sent to their email.
-func ExchangeOTPForToken(ctx context.Context, config Config, email, otp string) (*TokenResponse, error) {
+func (e *EmailLinkingFlow) ExchangeOTPForToken(ctx context.Context, email, otp string) (*TokenResponse, error) {
 	// Use SDK's passwordless LoginWithEmail method
 	request := passwordless.LoginWithEmailRequest{
 		Email: email,
@@ -72,7 +78,7 @@ func ExchangeOTPForToken(ctx context.Context, config Config, email, otp string) 
 		Scope: "openid email profile",
 	}
 
-	tokenSet, err := config.M2MTokenManager.authConfig.Passwordless.LoginWithEmail(ctx, request, oauth.IDTokenValidationOptions{})
+	tokenSet, err := e.flow.LoginWithEmail(ctx, request, oauth.IDTokenValidationOptions{})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to exchange OTP for token",
 			"error", err,
@@ -94,4 +100,13 @@ func ExchangeOTPForToken(ctx context.Context, config Config, email, otp string) 
 		RefreshToken: tokenSet.RefreshToken,
 		Scope:        tokenSet.Scope,
 	}, nil
+}
+
+// NewEmailLinkingFlow creates a new EmailLinkingFlow with the provided configuration
+func NewEmailLinkingFlow(authConfig *authentication.Authentication) *EmailLinkingFlow {
+	return &EmailLinkingFlow{
+		flow: &auth0PasswordlessFlow{
+			authConfig: authConfig,
+		},
+	}
 }

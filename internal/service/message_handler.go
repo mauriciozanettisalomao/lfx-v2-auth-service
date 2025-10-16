@@ -253,12 +253,17 @@ func (m *messageHandlerOrchestrator) StartEmailLinking(ctx context.Context, msg 
 		return m.errorResponse("alternate email is required"), nil
 	}
 
+	email := model.Email{Email: alternateEmailInput}
+	if !email.IsValidEmail() {
+		return m.errorResponse("invalid email"), nil
+	}
+
 	err := m.checkAlternateEmailExists(ctx, alternateEmailInput)
 	if err != nil {
 		return m.errorResponse(err.Error()), nil
 	}
 
-	errLinkAlternateEmail := m.emailHandler.SendAlternateEmailVerification(ctx, alternateEmailInput)
+	errLinkAlternateEmail := m.emailHandler.SendVerificationAlternateEmail(ctx, alternateEmailInput)
 	if errLinkAlternateEmail != nil {
 		return m.errorResponse(errLinkAlternateEmail.Error()), nil
 	}
@@ -286,6 +291,10 @@ func (m *messageHandlerOrchestrator) VerifyEmailLinking(ctx context.Context, msg
 	if err != nil {
 		responseJSON := m.errorResponse("failed to unmarshal email data")
 		return responseJSON, nil
+	}
+
+	if !email.IsValidEmail() {
+		return m.errorResponse("invalid email"), nil
 	}
 
 	//

@@ -128,3 +128,20 @@ func (e *ErrorResponse) ErrorMessage(errorMessage string) string {
 func NewErrorResponse() *ErrorResponse {
 	return &ErrorResponse{}
 }
+
+// PasswordlessStartResponse represents the response from Auth0 passwordless start endpoint
+type PasswordlessStartResponse struct {
+	ID            string `json:"_id"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+}
+
+// TokenResponse represents the response from Auth0 token endpoint
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	IDToken      string `json:"id_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Scope        string `json:"scope"`
+}

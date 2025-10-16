@@ -21,7 +21,34 @@ const (
 	emailAuthenticationFilter            = "email"
 )
 
-func filterUserByUsername(ctx context.Context, auth0User *Auth0User, user *model.User) (bool, error) {
+var (
+	// criteriaEndpointMapping is a map of criteria types and their corresponding API endpoints
+	criteriaEndpointMapping = map[string]string{
+		constants.CriteriaTypeEmail:          "users-by-email?email=%s",
+		constants.CriteriaTypeUsername:       `users?q=identities.user_id:%s&search_engine=v3`,
+		constants.CriteriaTypeAlternateEmail: `users?q=identities.profileData.email:%s&search_engine=v3`,
+	}
+)
+
+type userFilterer interface {
+	Endpoint(ctx context.Context) string
+	Args(ctx context.Context) []any
+	Filter(ctx context.Context, auth0User *Auth0User) (bool, error)
+}
+
+type usernameFilter struct {
+	user *model.User
+}
+
+func (u *usernameFilter) Endpoint(ctx context.Context) string {
+	return criteriaEndpointMapping[constants.CriteriaTypeUsername]
+}
+
+func (u *usernameFilter) Args(ctx context.Context) []any {
+	return []any{url.QueryEscape(u.user.Username)}
+}
+
+func (u *usernameFilter) Filter(ctx context.Context, auth0User *Auth0User) (bool, error) {
 	for _, identity := range auth0User.Identities {
 		if identity.Connection == usernamePasswordAuthenticationFilter {
 			// if the search is by username, we need to check if the identity is the one we are looking for
@@ -37,7 +64,7 @@ func filterUserByUsername(ctx context.Context, auth0User *Auth0User, user *model
 				return false, nil
 			}
 
-			if userID != user.Username {
+			if userID != u.user.Username {
 				slog.DebugContext(ctx, "user found, but it's not the correct identity",
 					"filter", usernamePasswordAuthenticationFilter,
 					"user_id", redaction.Redact(userID),
@@ -46,14 +73,26 @@ func filterUserByUsername(ctx context.Context, auth0User *Auth0User, user *model
 				// we need to return an error
 				return false, errors.NewNotFound("user not found")
 			}
-			user.Username = userID
+			u.user.Username = userID
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func filterUserByEmail(ctx context.Context, auth0User *Auth0User, user *model.User) (bool, error) {
+type emailFilter struct {
+	user *model.User
+}
+
+func (e *emailFilter) Endpoint(ctx context.Context) string {
+	return criteriaEndpointMapping[constants.CriteriaTypeEmail]
+}
+
+func (e *emailFilter) Args(ctx context.Context) []any {
+	return []any{url.QueryEscape(e.user.PrimaryEmail)}
+}
+
+func (e *emailFilter) Filter(ctx context.Context, auth0User *Auth0User) (bool, error) {
 	for _, identity := range auth0User.Identities {
 		if identity.Connection == usernamePasswordAuthenticationFilter {
 			// At this point, we know that the user is found, but the validation is to
@@ -66,24 +105,40 @@ func filterUserByEmail(ctx context.Context, auth0User *Auth0User, user *model.Us
 				)
 				return false, nil
 			}
-			user.Username = userID
+			e.user.PrimaryEmail = userID
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func filterUserByAlternateEmail(ctx context.Context, auth0User *Auth0User, user *model.User) (bool, error) {
+type alternateEmailFilter struct {
+	user *model.User
+}
+
+func (a *alternateEmailFilter) Endpoint(ctx context.Context) string {
+	return criteriaEndpointMapping[constants.CriteriaTypeAlternateEmail]
+}
+
+func (a *alternateEmailFilter) Args(ctx context.Context) []any {
+	if len(a.user.AlternateEmail) == 0 {
+		return []any{}
+	}
+	return []any{url.QueryEscape(a.user.AlternateEmail[0].Email)}
+}
+
+func (a *alternateEmailFilter) Filter(ctx context.Context, auth0User *Auth0User) (bool, error) {
 	for _, identity := range auth0User.Identities {
 		if identity.Connection == emailAuthenticationFilter {
-			for _, alternateEmail := range user.AlternateEmail {
-				if alternateEmail.Email == identity.ProfileData.Email {
+			for _, alternateEmail := range a.user.AlternateEmail {
+				if identity.ProfileData != nil &&
+					strings.EqualFold(alternateEmail.Email, identity.ProfileData.Email) {
 					slog.DebugContext(ctx, "user found, and it's the correct identity",
 						"filter", emailAuthenticationFilter,
 						"identity_email", redaction.RedactEmail(identity.ProfileData.Email),
 						"identity_email_verified", identity.ProfileData.EmailVerified,
 					)
-					auth0User.AlternateEmail = append(auth0User.AlternateEmail, Auth0ProfileData{
+					a.user.AlternateEmail = append(a.user.AlternateEmail, model.AlternateEmail{
 						Email:         identity.ProfileData.Email,
 						EmailVerified: identity.ProfileData.EmailVerified,
 					})
@@ -95,38 +150,18 @@ func filterUserByAlternateEmail(ctx context.Context, auth0User *Auth0User, user 
 	return false, nil
 }
 
-// criteriaFilter returns the arguments and filter function for the criteria type
+// newUserFilterer creates a new user filterer based on the criteria type
 // each filter might have a different way to filter the user, so we need to return the arguments and the filter function
-func criteriaFilter(ctx context.Context, criteriaType string, user *model.User) (args []any, filter func(ctx context.Context, auth0User *Auth0User, user *model.User) (bool, error)) {
+func newUserFilterer(criteriaType string, user *model.User) userFilterer {
 
 	switch criteriaType {
 
 	case constants.CriteriaTypeEmail:
-		email := strings.ToLower(strings.TrimSpace(user.PrimaryEmail))
-		slog.DebugContext(ctx, "searching user",
-			"criteria", criteriaType,
-			"email", redaction.RedactEmail(email),
-		)
-		return []any{url.QueryEscape(email)}, filterUserByEmail
-
+		return &emailFilter{user: user}
 	case constants.CriteriaTypeUsername:
-		username := strings.ToLower(strings.TrimSpace(user.Username))
-		slog.DebugContext(ctx, "searching user",
-			"criteria", criteriaType,
-			"username", redaction.Redact(username),
-		)
-		return []any{url.QueryEscape(username)}, filterUserByUsername
-
+		return &usernameFilter{user: user}
 	case constants.CriteriaTypeAlternateEmail:
-		if len(user.AlternateEmail) == 0 {
-			return []any{}, nil
-		}
-		alternateEmail := strings.ToLower(strings.TrimSpace(user.AlternateEmail[0].Email))
-		slog.DebugContext(ctx, "searching user",
-			"criteria", criteriaType,
-			"alternate_email", redaction.RedactEmail(alternateEmail),
-		)
-		return []any{url.QueryEscape(alternateEmail)}, filterUserByAlternateEmail
+		return &alternateEmailFilter{user: user}
 	}
-	return []any{}, nil
+	return nil
 }

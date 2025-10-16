@@ -204,7 +204,7 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 	return &updatedUser, nil
 }
 
-func (u *userWriter) SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error {
+func (u *userWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
 	slog.DebugContext(ctx, "mock: sending alternate email verification", "alternate_email", alternateEmail)
 	return nil
 }

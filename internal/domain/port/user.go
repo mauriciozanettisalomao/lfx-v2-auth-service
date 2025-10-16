@@ -30,6 +30,6 @@ type UserWriter interface {
 
 // EmailHandler defines the behavior of the email handler
 type EmailHandler interface {
-	SendAlternateEmailVerification(ctx context.Context, alternateEmail string) error
+	SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error
 	VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error)
 }
