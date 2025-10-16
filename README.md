@@ -362,6 +362,45 @@ nats request lfx.auth-service.user_metadata.update '{
 
 The auth service provides a two-step verification flow for linking alternate email addresses to user accounts. This flow verifies ownership of the email address before linking it to the user's profile.
 
+#### Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Client
+    participant AuthService
+    participant Auth0
+
+    Note over User,Auth0: Start Email Linking Flow
+    
+    User->>Client: Request to link alternate email
+    Client->>AuthService: NATS: email_linking.send_verification<br/>(alternate email)
+    
+    AuthService->>AuthService: Validate email format
+    AuthService->>AuthService: Check email doesn't exist<br/>(primary or alternate)
+    
+    AuthService->>Auth0: Start Passwordless Flow<br/>(send OTP to email)
+    Auth0-->>User: Email with OTP code
+    Auth0-->>AuthService: Success
+    AuthService-->>Client: {"success": true,<br/>"message": "verification sent"}
+    Client-->>User: Show OTP input form
+
+    Note over User,Auth0: Verify Email Linking Flow
+    
+    User->>Client: Submit OTP code
+    Client->>AuthService: NATS: email_linking.verify<br/>(email + OTP)
+    
+    AuthService->>AuthService: Validate email format
+    AuthService->>AuthService: Check email still doesn't exist<br/>(prevent race condition)
+    
+    AuthService->>Auth0: Exchange OTP for token
+    Auth0-->>AuthService: Access token
+    AuthService-->>Client: {"success": true,<br/>"data": {"token": "..."}}
+    Client-->>User: Email verified successfully
+    
+    Note over Client,Auth0: PENDING IMPLEMENTATION<br/>Client must use returned token to<br/>link verified email to user identity<br/>
+```
+
 #### Step 1: Send Verification Code
 
 To initiate the email verification process, send a NATS request to start the passwordless flow:

@@ -308,6 +308,14 @@ func (u *userReaderWriter) SendVerificationAlternateEmail(ctx context.Context, a
 
 func (u *userReaderWriter) VerifyAlternateEmail(ctx context.Context, email *model.Email) (*model.User, error) {
 
+	if u.emailLinkingFlow == nil {
+		return nil, errors.NewUnexpected("email linking flow not configured")
+	}
+
+	if email.Email == "" || email.OTP == "" {
+		return nil, errors.NewValidation("email and OTP are required")
+	}
+
 	tokenResp, errExchangeOTPForToken := u.emailLinkingFlow.ExchangeOTPForToken(ctx, email.Email, email.OTP)
 	if errExchangeOTPForToken != nil {
 		return nil, errExchangeOTPForToken

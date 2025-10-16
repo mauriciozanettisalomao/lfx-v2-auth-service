@@ -228,20 +228,23 @@ func (m *messageHandlerOrchestrator) UpdateUser(ctx context.Context, msg port.Tr
 
 func (m *messageHandlerOrchestrator) checkEmailExists(ctx context.Context, email string) error {
 
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	var notFound errs.NotFound
 	for _, criteria := range []string{constants.CriteriaTypeAlternateEmail, constants.CriteriaTypeEmail} {
 		user, errSearch := m.searchByEmail(ctx, criteria, email)
-		if errSearch != nil && !errors.As(errSearch, &errs.NotFound{}) {
+		if errSearch != nil && !errors.As(errSearch, &notFound) {
 			return errSearch
 		}
 		if user != nil && user.UserID != "" {
 			slog.DebugContext(ctx, "user found", "user_id", redaction.Redact(user.UserID))
 
-			if user.PrimaryEmail == email {
+			if strings.EqualFold(user.PrimaryEmail, email) {
 				return errs.NewValidation("email already linked")
 			}
 
 			for _, alternateEmail := range user.AlternateEmail {
-				if alternateEmail.Email == email && alternateEmail.EmailVerified {
+				if strings.EqualFold(alternateEmail.Email, email) && alternateEmail.EmailVerified {
 					return errs.NewValidation("email already linked")
 				}
 			}
@@ -258,7 +261,7 @@ func (m *messageHandlerOrchestrator) StartEmailLinking(ctx context.Context, msg 
 		return m.errorResponse("email service unavailable"), nil
 	}
 
-	alternateEmailInput := strings.TrimSpace(string(msg.Data()))
+	alternateEmailInput := strings.ToLower(strings.TrimSpace(string(msg.Data())))
 	if alternateEmailInput == "" {
 		return m.errorResponse("alternate email is required"), nil
 	}

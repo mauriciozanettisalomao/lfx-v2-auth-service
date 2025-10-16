@@ -46,6 +46,10 @@ func (a *auth0PasswordlessFlow) LoginWithEmail(ctx context.Context, request pass
 // This is used in the alternate email linking flow to send a verification code to the alternate email address.
 func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email string) error {
 
+	if e == nil || e.flow == nil {
+		return errors.NewUnexpected("passwordless flow not configured")
+	}
+
 	// Use SDK's passwordless SendEmail method
 	request := passwordless.SendEmailRequest{
 		Email:      email,
@@ -57,7 +61,7 @@ func (e *EmailLinkingFlow) StartPasswordlessFlow(ctx context.Context, email stri
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to send passwordless email",
 			"error", err,
-			"email", email)
+			"email", redaction.Redact(email))
 		return errors.NewUnexpected("failed to start passwordless flow", err)
 	}
 
