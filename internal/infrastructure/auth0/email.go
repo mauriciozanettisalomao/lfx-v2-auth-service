@@ -89,7 +89,7 @@ func (e *EmailLinkingFlow) ExchangeOTPForToken(ctx context.Context, email, otp s
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to exchange OTP for token",
 			"error", err,
-			"email", email)
+			"email", redaction.Redact(email))
 		return nil, errors.NewUnexpected("failed to exchange OTP for token", err)
 	}
 

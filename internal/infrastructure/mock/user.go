@@ -14,6 +14,7 @@ import (
 	"github.com/linuxfoundation/lfx-v2-auth-service/internal/domain/port"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/errors"
 	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/jwt"
+	"github.com/linuxfoundation/lfx-v2-auth-service/pkg/redaction"
 	"gopkg.in/yaml.v3"
 )
 
@@ -205,7 +206,7 @@ func (u *userWriter) UpdateUser(ctx context.Context, user *model.User) (*model.U
 }
 
 func (u *userWriter) SendVerificationAlternateEmail(ctx context.Context, alternateEmail string) error {
-	slog.DebugContext(ctx, "mock: sending alternate email verification", "alternate_email", alternateEmail)
+	slog.DebugContext(ctx, "mock: sending alternate email verification", "alternate_email", redaction.Redact(alternateEmail))
 	return nil
 }
 
