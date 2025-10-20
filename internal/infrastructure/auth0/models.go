@@ -81,11 +81,11 @@ func (u *Auth0User) ToUser() *model.User {
 		}
 	}
 
-	var alternateEmails []model.AlternateEmail
+	var alternateEmails []model.Email
 	for _, alternateEmail := range u.AlternateEmail {
-		alternateEmail := model.AlternateEmail{
-			Email:         alternateEmail.Email,
-			EmailVerified: alternateEmail.EmailVerified,
+		alternateEmail := model.Email{
+			Email:    alternateEmail.Email,
+			Verified: alternateEmail.EmailVerified,
 		}
 		alternateEmails = append(alternateEmails, alternateEmail)
 	}

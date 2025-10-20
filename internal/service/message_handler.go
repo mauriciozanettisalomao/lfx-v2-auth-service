@@ -80,7 +80,7 @@ func (m *messageHandlerOrchestrator) searchByEmail(ctx context.Context, criteria
 		PrimaryEmail: email,
 	}
 	if criteria == constants.CriteriaTypeAlternateEmail {
-		user.AlternateEmail = []model.AlternateEmail{{Email: email}}
+		user.AlternateEmail = []model.Email{{Email: email}}
 	}
 
 	// SearchUser is used to find “root” user emails, not linked email
@@ -245,7 +245,7 @@ func (m *messageHandlerOrchestrator) checkEmailExists(ctx context.Context, email
 			}
 
 			for _, alternateEmail := range user.AlternateEmail {
-				if strings.EqualFold(alternateEmail.Email, email) && alternateEmail.EmailVerified {
+				if strings.EqualFold(alternateEmail.Email, email) && alternateEmail.Verified {
 					return errs.NewValidation("email already linked")
 				}
 			}
@@ -329,7 +329,7 @@ func (m *messageHandlerOrchestrator) VerifyEmailLinking(ctx context.Context, msg
 	// Return success response with user metadata
 	response := UserDataResponse{
 		Success: true,
-		Data:    map[string]any{"token": user.Token},
+		Data:    map[string]any{"identity_token": user.Token},
 	}
 
 	responseJSON, err := json.Marshal(response)

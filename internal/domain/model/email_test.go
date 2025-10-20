@@ -244,3 +244,117 @@ func TestEmail_IsValidEmail(t *testing.T) {
 		})
 	}
 }
+
+func TestEmailMessage_IsValid(t *testing.T) {
+	tests := []struct {
+		name     string
+		message  *EmailMessage
+		expected bool
+	}{
+		{
+			name: "valid message with all fields",
+			message: &EmailMessage{
+				From:     "sender@example.com",
+				FromName: "Sender Name",
+				To:       "recipient@example.com",
+				Subject:  "Test Subject",
+				Body:     "Test Body",
+				IsHTML:   false,
+			},
+			expected: true,
+		},
+		{
+			name: "valid message without from fields",
+			message: &EmailMessage{
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+				IsHTML:  true,
+			},
+			expected: true,
+		},
+		{
+			name: "valid message without FromName",
+			message: &EmailMessage{
+				From:    "sender@example.com",
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+			},
+			expected: true,
+		},
+		{
+			name: "invalid message - missing To",
+			message: &EmailMessage{
+				From:    "sender@example.com",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid message - missing Subject",
+			message: &EmailMessage{
+				To:   "recipient@example.com",
+				Body: "Test Body",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid message - missing Body",
+			message: &EmailMessage{
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid message - invalid To email",
+			message: &EmailMessage{
+				To:      "invalid-email",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid message - invalid From email",
+			message: &EmailMessage{
+				From:    "invalid-email",
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+			},
+			expected: false,
+		},
+		{
+			name: "valid message - empty From",
+			message: &EmailMessage{
+				From:    "",
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+				Body:    "Test Body",
+			},
+			expected: true,
+		},
+		{
+			name: "valid message with HTML",
+			message: &EmailMessage{
+				To:      "recipient@example.com",
+				Subject: "Test Subject",
+				Body:    "<html><body>Test</body></html>",
+				IsHTML:  true,
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.message.IsValid()
+			if result != tt.expected {
+				t.Errorf("IsValid() = %v, expected %v for message: %+v", result, tt.expected, tt.message)
+			}
+		})
+	}
+}

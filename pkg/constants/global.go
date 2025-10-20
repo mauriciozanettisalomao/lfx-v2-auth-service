@@ -52,4 +52,23 @@ const (
 
 	// Auth0AudienceEnvKey is the environment variable key for the Auth0 audience
 	Auth0AudienceEnvKey = "AUTH0_AUDIENCE"
+
+	// Email/SMTP configuration (generic for any SMTP provider: Mailpit, SendGrid, AWS SES, etc.)
+	// EmailSMTPHostEnvKey is the environment variable key for the SMTP server host
+	EmailSMTPHostEnvKey = "EMAIL_SMTP_HOST"
+
+	// EmailSMTPPortEnvKey is the environment variable key for the SMTP server port
+	EmailSMTPPortEnvKey = "EMAIL_SMTP_PORT"
+
+	// EmailFromAddressEnvKey is the environment variable key for the sender email address
+	EmailFromAddressEnvKey = "EMAIL_FROM_ADDRESS"
+
+	// EmailFromNameEnvKey is the environment variable key for the sender name
+	EmailFromNameEnvKey = "EMAIL_FROM_NAME"
+
+	// EmailSMTPUsernameEnvKey is the environment variable key for SMTP username
+	EmailSMTPUsernameEnvKey = "EMAIL_SMTP_USERNAME"
+
+	// EmailSMTPPasswordEnvKey is the environment variable key for SMTP password
+	EmailSMTPPasswordEnvKey = "EMAIL_SMTP_PASSWORD"
 )
